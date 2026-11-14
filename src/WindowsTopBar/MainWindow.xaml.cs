@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Microsoft.Win32;
 
@@ -27,6 +28,9 @@ public partial class MainWindow : Window
     private static readonly Color DarkText = Color.FromRgb(51, 53, 58);
 
     private readonly DispatcherTimer _clock = new();
+    private readonly MessengerWindows _messengers = new();
+    private long _lastQqFlash;
+    private long _lastWeChatFlash;
     private readonly DispatcherTimer _inputTimer = new(DispatcherPriority.Background)
     {
         Interval = TimeSpan.FromMilliseconds(300)
@@ -81,6 +85,7 @@ public partial class MainWindow : Window
         }
 
         _source.AddHook(OnWindowMessage);
+        _messengers.Register(_source.Handle);
         _appBar = new AppBar(_source, Height);
         _appBar.Start();
         RefreshAppearance();
@@ -106,6 +111,7 @@ public partial class MainWindow : Window
         _tintTimer.Stop();
         _tintTimer.Tick -= RefreshEdgeTint;
         _pendingAppearance?.Abort();
+        _messengers.Dispose();
         _appBar?.Dispose();
         _source?.RemoveHook(OnWindowMessage);
     }
@@ -184,6 +190,11 @@ public partial class MainWindow : Window
 
     private nint OnWindowMessage(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
+        if (!_closing && _messengers.ReadFlash(message, wParam, lParam) is { } messenger)
+        {
+            FlashMessenger(messenger);
+        }
+
         if (message == WmMouseActivate)
         {
             // System shortcuts should act while the previous application still has focus.
@@ -218,12 +229,16 @@ public partial class MainWindow : Window
         _statusRefreshPending = true;
         try
         {
-            var (battery, wifi, audio) = await Task.Run(() =>
-                (SystemStatus.ReadBattery(), SystemStatus.ReadWifi(), AudioStatus.Read()));
+            var (battery, wifi, audio, messengers) = await Task.Run(() =>
+                (SystemStatus.ReadBattery(), SystemStatus.ReadWifi(), AudioStatus.Read(), MessengerWindows.ReadRunning()));
             if (_closing)
             {
                 return;
             }
+
+            QQButton.Visibility = messengers.QQ ? Visibility.Visible : Visibility.Collapsed;
+            WeChatButton.Visibility = messengers.WeChat ? Visibility.Visible : Visibility.Collapsed;
+            UpdateMessengerSeparator();
 
             BatteryIndicator.Visibility = battery.HasBattery ? Visibility.Visible : Visibility.Collapsed;
             BatteryText.Text = battery.Percentage is int percentage ? $"{percentage}%" : "—";
@@ -251,6 +266,38 @@ public partial class MainWindow : Window
             _statusRefreshPending = false;
         }
     }
+
+    private void UpdateMessengerSeparator() =>
+        MessengerSeparator.Visibility = QQButton.Visibility == Visibility.Visible || WeChatButton.Visibility == Visibility.Visible
+            ? Visibility.Visible : Visibility.Collapsed;
+
+    private void FlashMessenger(Messenger messenger)
+    {
+        var isQq = messenger == Messenger.QQ;
+        var button = isQq ? QQButton : WeChatButton;
+        var glyph = isQq ? QQGlyph : WeChatGlyph;
+        button.Visibility = Visibility.Visible;
+        UpdateMessengerSeparator();
+
+        ref var lastFlash = ref (isQq ? ref _lastQqFlash : ref _lastWeChatFlash);
+        var now = Environment.TickCount64;
+        var repeated = lastFlash != 0 && now - lastFlash < 1200;
+        lastFlash = now;
+        if (!repeated)
+        {
+            glyph.BeginAnimation(OpacityProperty,
+                new DoubleAnimation(1, 0.18, TimeSpan.FromMilliseconds(300))
+                {
+                    AutoReverse = true,
+                    RepeatBehavior = new RepeatBehavior(4),
+                    FillBehavior = FillBehavior.Stop
+                });
+        }
+    }
+
+    private void QQ_Click(object sender, RoutedEventArgs e) => MessengerWindows.Activate(Messenger.QQ);
+
+    private void WeChat_Click(object sender, RoutedEventArgs e) => MessengerWindows.Activate(Messenger.WeChat);
 
     private async void QuickSettings_Click(object sender, RoutedEventArgs e)
     {
