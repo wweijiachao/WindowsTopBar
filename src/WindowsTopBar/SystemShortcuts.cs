@@ -43,13 +43,33 @@ internal static class SystemShortcuts
     {
         AutomationElement? overflowButton = null;
         bool openedOverflow = false;
+        ScreenPoint? originalCursor = null;
+        ScreenPoint revealPoint = default;
         try
         {
-            if (cancellationToken.IsCancellationRequested || GetTaskbar() is not { } taskbar)
+            cancellationToken.ThrowIfCancellationRequested();
+            var taskbarWindow = FindWindowW("Shell_TrayWnd", null);
+            if (taskbarWindow == 0)
             {
                 return false;
             }
 
+            if (TryGetHiddenTaskbarEdge(taskbarWindow, out revealPoint) &&
+                GetCursorPos(out var cursor) && SetCursorPos(revealPoint.X, revealPoint.Y))
+            {
+                originalCursor = cursor;
+                // Wait for Explorer to expose its tray controls after revealing the taskbar.
+                for (int attempt = 0; attempt < 6; attempt++)
+                {
+                    await Task.Delay(100, cancellationToken).ConfigureAwait(false);
+                    if (!TryGetHiddenTaskbarEdge(taskbarWindow, out _))
+                    {
+                        break;
+                    }
+                }
+            }
+
+            var taskbar = AutomationElement.FromHandle(taskbarWindow);
             if (Invoke(FindMessengerTrayIcon(taskbar, messenger)))
             {
                 return true;
@@ -103,9 +123,44 @@ internal static class SystemShortcuts
                     Trace.TraceWarning("Could not close the tray overflow: {0}", error.Message);
                 }
             }
+
+            if (originalCursor is { } saved && GetCursorPos(out var current) &&
+                current.X == revealPoint.X && current.Y == revealPoint.Y)
+            {
+                SetCursorPos(saved.X, saved.Y);
+            }
         }
 
         return false;
+    }
+
+    private static bool TryGetHiddenTaskbarEdge(nint taskbar, out ScreenPoint point)
+    {
+        point = default;
+        var monitor = MonitorFromWindow(taskbar, 2); // MONITOR_DEFAULTTONEAREST
+        var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        if (!GetWindowRect(taskbar, out var tray) || !GetMonitorInfoW(monitor, ref info))
+        {
+            return false;
+        }
+
+        // When auto-hidden, Explorer leaves only a thin strip within the monitor.
+        var screen = info.Monitor;
+        if (tray.Bottom > screen.Bottom && screen.Bottom - tray.Top <= 4)
+        {
+            point = new ScreenPoint((tray.Left + tray.Right) / 2, screen.Bottom - 1);
+        }
+        else if (tray.Top < screen.Top && tray.Bottom - screen.Top <= 4)
+        {
+            point = new ScreenPoint((tray.Left + tray.Right) / 2, screen.Top);
+        }
+        else
+        {
+            return false;
+        }
+
+        point = point with { X = Math.Clamp(point.X, screen.Left, screen.Right - 1) };
+        return true;
     }
 
     private static AutomationElement? GetTrayOverflow()
@@ -221,6 +276,17 @@ internal static class SystemShortcuts
         public int Left, Top, Right, Bottom;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private record struct ScreenPoint(int X, int Y);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MonitorInfo
+    {
+        public int Size;
+        public WindowRect Monitor, WorkArea;
+        public uint Flags;
+    }
+
     private static void SendWindowsShortcut(ushort key)
     {
         const ushort leftWindows = 0x5B;
@@ -280,6 +346,18 @@ internal static class SystemShortcuts
 
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern bool IsWindowVisible(nint window);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern nint MonitorFromWindow(nint window, uint flags);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool GetMonitorInfoW(nint monitor, ref MonitorInfo info);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool GetCursorPos(out ScreenPoint point);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool SetCursorPos(int x, int y);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     private static extern int GetClassNameW(nint window, System.Text.StringBuilder className, int size);
