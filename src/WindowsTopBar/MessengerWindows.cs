@@ -107,18 +107,40 @@ internal sealed class MessengerWindows : IDisposable
     }
 
     public static (bool QQ, bool WeChat) ReadRunning() =>
-        (FindProcess("QQ", requireWindow: false) != 0,
-            WeChatProcesses.Any(name => FindProcess(name, requireWindow: false) != 0));
+        (FindProcess("QQ", requireWindow: false) != 0, IsWeChatRunning());
+
+    private static bool IsWeChatRunning() =>
+        WeChatProcesses.Any(name => FindProcess(name, requireWindow: false) != 0);
 
     public static async Task Activate(Messenger messenger, CancellationToken cancellationToken)
     {
-        if (await SystemShortcuts.InvokeMessengerTrayIcon(messenger, cancellationToken).ConfigureAwait(false) ||
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        if (messenger == Messenger.WeChat)
+        {
+            if (!TryActivateMainWindow(WeChatProcesses) && IsWeChatRunning() &&
+                !cancellationToken.IsCancellationRequested)
+            {
+                SystemShortcuts.SendWeChatOpenShortcut();
+            }
+
+            return;
+        }
+
+        if (await SystemShortcuts.InvokeQqTrayIcon(cancellationToken).ConfigureAwait(false) ||
             cancellationToken.IsCancellationRequested)
         {
             return;
         }
 
-        string[] names = messenger == Messenger.QQ ? ["QQ"] : WeChatProcesses;
+        TryActivateMainWindow("QQ");
+    }
+
+    private static bool TryActivateMainWindow(params string[] names)
+    {
         foreach (var name in names)
         {
             var window = FindProcess(name, requireWindow: true);
@@ -127,14 +149,15 @@ internal sealed class MessengerWindows : IDisposable
                 continue;
             }
 
-            if (IsIconic(window))
+            // Asynchronous restore can finish after the foreground request.
+            var restoreRequested = IsIconic(window) && ShowWindowAsync(window, 9); // SW_RESTORE
+            if (SetForegroundWindow(window) || restoreRequested)
             {
-                ShowWindowAsync(window, 9); // SW_RESTORE
+                return true;
             }
-
-            SetForegroundWindow(window);
-            return;
         }
+
+        return false;
     }
 
     private static nint FindProcess(string name, bool requireWindow)

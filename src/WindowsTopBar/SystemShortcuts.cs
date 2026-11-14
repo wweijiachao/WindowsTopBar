@@ -7,6 +7,9 @@ namespace WindowsTopBar;
 
 internal static class SystemShortcuts
 {
+    private const ushort LeftWindows = 0x5B;
+    private const uint KeyUp = 2;
+
     public static async Task OpenQuickSettings(int right, int top, int gap, CancellationToken cancellationToken)
     {
         if (IsQuickSettings(GetForegroundWindow()))
@@ -39,7 +42,7 @@ internal static class SystemShortcuts
         }
     }
 
-    public static async Task<bool> InvokeMessengerTrayIcon(Messenger messenger, CancellationToken cancellationToken)
+    public static async Task<bool> InvokeQqTrayIcon(CancellationToken cancellationToken)
     {
         AutomationElement? overflowButton = null;
         bool openedOverflow = false;
@@ -70,14 +73,14 @@ internal static class SystemShortcuts
             }
 
             var taskbar = AutomationElement.FromHandle(taskbarWindow);
-            if (Invoke(FindMessengerTrayIcon(taskbar, messenger)))
+            if (Invoke(FindQqTrayIcon(taskbar)))
             {
                 return true;
             }
 
             if (GetTrayOverflow() is { } existingOverflow)
             {
-                return Invoke(FindMessengerTrayIcon(existingOverflow, messenger));
+                return Invoke(FindQqTrayIcon(existingOverflow));
             }
 
             overflowButton = taskbar.FindFirst(TreeScope.Descendants, new AndCondition(
@@ -94,7 +97,7 @@ internal static class SystemShortcuts
             for (int attempt = 0; attempt < 5; attempt++)
             {
                 await Task.Delay(100, cancellationToken).ConfigureAwait(false);
-                if (GetTrayOverflow() is { } overflow && Invoke(FindMessengerTrayIcon(overflow, messenger)))
+                if (GetTrayOverflow() is { } overflow && Invoke(FindQqTrayIcon(overflow)))
                 {
                     return true;
                 }
@@ -105,7 +108,7 @@ internal static class SystemShortcuts
         }
         catch (Exception error) when (IsAutomationFailure(error))
         {
-            Trace.TraceWarning("Could not invoke the messenger's tray icon: {0}", error.Message);
+            Trace.TraceWarning("Could not invoke the QQ tray icon: {0}", error.Message);
         }
         finally
         {
@@ -174,7 +177,7 @@ internal static class SystemShortcuts
         return window != 0 && IsWindowVisible(window) ? AutomationElement.FromHandle(window) : null;
     }
 
-    private static AutomationElement? FindMessengerTrayIcon(AutomationElement tray, Messenger messenger)
+    private static AutomationElement? FindQqTrayIcon(AutomationElement tray)
     {
         var icons = tray.FindAll(TreeScope.Descendants,
             new PropertyCondition(AutomationElement.AutomationIdProperty, "NotifyItemIcon"));
@@ -183,12 +186,7 @@ internal static class SystemShortcuts
             var name = icon.Current.Name.AsSpan().TrimStart();
             var separator = name.IndexOfAny(":：\r\n");
             var label = (separator < 0 ? name : name[..separator]).TrimEnd();
-            var matches = messenger == Messenger.QQ
-                ? label.Equals("QQ", StringComparison.OrdinalIgnoreCase)
-                : label.Equals("微信", StringComparison.Ordinal) ||
-                    label.Equals("Weixin", StringComparison.OrdinalIgnoreCase) ||
-                    label.Equals("WeChat", StringComparison.OrdinalIgnoreCase);
-            if (matches && !icon.Current.IsOffscreen)
+            if (label.Equals("QQ", StringComparison.OrdinalIgnoreCase) && !icon.Current.IsOffscreen)
             {
                 return icon;
             }
@@ -289,14 +287,55 @@ internal static class SystemShortcuts
 
     private static void SendWindowsShortcut(ushort key)
     {
-        const ushort leftWindows = 0x5B;
-        const uint keyUp = 2;
-        Input[] keys = [Key(leftWindows, 0), Key(key, 0), Key(key, keyUp), Key(leftWindows, keyUp)];
-        var size = Marshal.SizeOf<Input>();
-        if (SendInput((uint)keys.Length, keys, size) != keys.Length)
+        if (!TrySendShortcut(LeftWindows, key))
         {
             Trace.TraceWarning("Could not send the Windows keyboard shortcut.");
         }
+    }
+
+    public static void SendWeChatOpenShortcut()
+    {
+        const ushort shift = 0x10;
+        const ushort control = 0x11;
+        const ushort alt = 0x12;
+        const ushort rightWindows = 0x5C;
+        const ushort openKey = 'W';
+        if (GetAsyncKeyState(shift) < 0 || GetAsyncKeyState(control) < 0 || GetAsyncKeyState(alt) < 0 ||
+            GetAsyncKeyState(LeftWindows) < 0 || GetAsyncKeyState(rightWindows) < 0 || GetAsyncKeyState(openKey) < 0)
+        {
+            return;
+        }
+
+        if (!TrySendShortcut(control, alt, openKey))
+        {
+            Trace.TraceWarning("Could not send the WeChat open shortcut.");
+        }
+    }
+
+    private static bool TrySendShortcut(params ushort[] keys)
+    {
+        var inputs = new Input[keys.Length * 2];
+        for (int index = 0; index < keys.Length; index++)
+        {
+            inputs[index] = Key(keys[index], 0);
+            inputs[inputs.Length - 1 - index] = Key(keys[index], KeyUp);
+        }
+
+        var size = Marshal.SizeOf<Input>();
+        var sent = (int)SendInput((uint)inputs.Length, inputs, size);
+        if (sent == inputs.Length)
+        {
+            return true;
+        }
+
+        // The tail of the sequence releases any keys still down after a partial send.
+        var held = Math.Min(sent, inputs.Length - sent);
+        if (held > 0 && SendInput((uint)held, inputs[^held..], size) != held)
+        {
+            Trace.TraceWarning("Could not release all keys after sending a keyboard shortcut.");
+        }
+
+        return false;
     }
 
     private static Input Key(ushort key, uint flags) => new()
@@ -337,6 +376,9 @@ internal static class SystemShortcuts
 
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern uint SendInput(uint count, [In] Input[] inputs, int size);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern short GetAsyncKeyState(int key);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     private static extern nint FindWindowW(string className, string? windowName);
