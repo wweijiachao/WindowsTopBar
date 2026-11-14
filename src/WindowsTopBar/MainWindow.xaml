@@ -18,6 +18,7 @@
             <Setter Property="ToolTipService.BetweenShowDelay" Value="0" />
         </Style>
         <Style x:Key="StatusButton" TargetType="Button">
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Window}}" />
             <Setter Property="Padding" Value="8,0" />
             <Setter Property="MinWidth" Value="33" />
@@ -33,9 +34,6 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Hover" Property="Opacity" Value="0.12" />
-                            </Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Hover" Property="Opacity" Value="0.16" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
