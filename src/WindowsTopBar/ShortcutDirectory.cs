@@ -5,7 +5,18 @@ namespace WindowsTopBar;
 
 internal static class ShortcutDirectory
 {
-    public static string Folder { get; } = Path.Combine(Path.GetDirectoryName(AppearanceSettings.FilePath)!, "Shortcuts");
+    public static string GetConfiguredFolder()
+    {
+        var configured = AppearanceSettings.Load(AppearanceSettings.FilePath).ShortcutFolder;
+        var path = string.IsNullOrWhiteSpace(configured) ? AppearanceSettings.DefaultShortcutFolder : configured;
+        return Path.GetFullPath(Environment.ExpandEnvironmentVariables(path), AppearanceSettings.Folder);
+    }
+
+    public static void OpenFolder(string folder)
+    {
+        Directory.CreateDirectory(folder);
+        Launch(folder);
+    }
 
     public static string[] List(string folder)
     {

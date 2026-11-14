@@ -305,7 +305,7 @@ public partial class MainWindow : Window
         var menu = new ContextMenu { PlacementTarget = ShortcutsButton, Placement = PlacementMode.Bottom };
         try
         {
-            foreach (var path in ShortcutDirectory.List(ShortcutDirectory.Folder))
+            foreach (var path in ShortcutDirectory.List(ShortcutDirectory.GetConfiguredFolder()))
             {
                 // TextBlock preserves underscores in the filename as literal text.
                 var name = Path.GetFileNameWithoutExtension(path);
@@ -336,12 +336,33 @@ public partial class MainWindow : Window
                 menu.Items.Add(new MenuItem { Header = "快捷方式目录为空", IsEnabled = false });
             }
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
             menu.Items.Add(new MenuItem { Header = "无法读取快捷方式目录", IsEnabled = false });
         }
 
         menu.IsOpen = true;
+    }
+
+    private void OpenShortcutsFolder_Click(object sender, RoutedEventArgs e) =>
+        OpenFolder(ShortcutDirectory.GetConfiguredFolder, "快速启动目录");
+
+    private void OpenSettingsFolder_Click(object sender, RoutedEventArgs e)
+    {
+        AppearanceSettings.PrepareForEditing(AppearanceSettings.FilePath);
+        OpenFolder(() => AppearanceSettings.Folder, "配置文件目录");
+    }
+
+    private void OpenFolder(Func<string> path, string label)
+    {
+        try
+        {
+            ShortcutDirectory.OpenFolder(path());
+        }
+        catch (Exception error) when (error is Win32Exception or IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            MessageBox.Show(this, $"无法打开{label}。", "Windows Top Bar", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     private void LaunchShortcut(string path)
@@ -461,6 +482,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        updated = updated with { ShortcutFolder = AppearanceSettings.Load(AppearanceSettings.FilePath).ShortcutFolder };
         if (!updated.TrySave(AppearanceSettings.FilePath))
         {
             UpdateThemeMenu();

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace WindowsTopBar;
@@ -10,12 +11,16 @@ internal enum TopBarTheme { System, Dark, Light }
 
 internal sealed record AppearanceSettings
 {
+    public const string DefaultShortcutFolder = "Shortcuts";
+
     public TopBarTheme Theme { get; init; } = TopBarTheme.System;
     public bool AcrylicEnabled { get; init; } = true;
+    public string? ShortcutFolder { get; init; } = DefaultShortcutFolder;
 
-    public static string FilePath { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "WindowsTopBar", "settings.json");
+    public static string Folder { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WindowsTopBar");
+
+    public static string FilePath { get; } = Path.Combine(Folder, "settings.json");
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
@@ -38,13 +43,38 @@ internal sealed record AppearanceSettings
         }
     }
 
-    public bool TrySave(string path)
+    public static void PrepareForEditing(string path)
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                new AppearanceSettings().TrySave(path);
+                return;
+            }
+
+            if (JsonNode.Parse(File.ReadAllText(path)) is JsonObject settings &&
+                !settings.ContainsKey(nameof(ShortcutFolder)))
+            {
+                settings[nameof(ShortcutFolder)] = DefaultShortcutFolder;
+                TryWrite(path, JsonSerializer.SerializeToUtf8Bytes(settings, JsonOptions));
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
+        {
+            Trace.TraceWarning("Could not prepare WindowsTopBar settings for editing: {0}", error.Message);
+        }
+    }
+
+    public bool TrySave(string path) => TryWrite(path, JsonSerializer.SerializeToUtf8Bytes(this, JsonOptions));
+
+    private static bool TryWrite(string path, byte[] content)
     {
         var temporaryPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllBytes(temporaryPath, JsonSerializer.SerializeToUtf8Bytes(this, JsonOptions));
+            File.WriteAllBytes(temporaryPath, content);
             File.Move(temporaryPath, path, overwrite: true);
             return true;
         }
