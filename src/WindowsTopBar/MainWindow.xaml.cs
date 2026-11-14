@@ -27,6 +27,10 @@ public partial class MainWindow : Window
     private static readonly Color DarkText = Color.FromRgb(51, 53, 58);
 
     private readonly DispatcherTimer _clock = new();
+    private readonly DispatcherTimer _inputTimer = new(DispatcherPriority.Background)
+    {
+        Interval = TimeSpan.FromMilliseconds(300)
+    };
     private readonly DispatcherTimer _statusTimer = new(DispatcherPriority.Background)
     {
         Interval = TimeSpan.FromSeconds(2)
@@ -42,7 +46,10 @@ public partial class MainWindow : Window
     private Color _acrylicTint;
     private AppearanceSettings _settings;
     private bool _statusRefreshPending;
+    private bool _inputRefreshPending;
     private bool _closing;
+    private readonly CancellationTokenSource _windowLifetime = new();
+    private bool _openingQuickSettings;
 
     public MainWindow()
     {
@@ -52,8 +59,11 @@ public partial class MainWindow : Window
         _clock.Tick += RefreshClock;
         _tintTimer.Tick += RefreshEdgeTint;
         _statusTimer.Tick += RefreshStatus;
+        _inputTimer.Tick += RefreshInputIndicator;
         Loaded += (_, _) =>
         {
+            _inputTimer.Start();
+            RefreshInputIndicator(this, EventArgs.Empty);
             _statusTimer.Start();
             RefreshStatus(this, EventArgs.Empty);
         };
@@ -85,8 +95,12 @@ public partial class MainWindow : Window
         }
 
         _closing = true;
+        _windowLifetime.Cancel();
+        _windowLifetime.Dispose();
         _statusTimer.Stop();
         _statusTimer.Tick -= RefreshStatus;
+        _inputTimer.Stop();
+        _inputTimer.Tick -= RefreshInputIndicator;
         _clock.Stop();
         _clock.Tick -= RefreshClock;
         _tintTimer.Stop();
@@ -196,9 +210,6 @@ public partial class MainWindow : Window
 
     private async void RefreshStatus(object? sender, EventArgs e)
     {
-        var input = SystemStatus.ReadInputLanguage();
-        InputText.Text = input.Label;
-        InputButton.ToolTip = $"{input.Name} · Win + Space";
         if (_statusRefreshPending)
         {
             return;
@@ -214,14 +225,14 @@ public partial class MainWindow : Window
                 return;
             }
 
-            BatteryButton.Visibility = battery.HasBattery ? Visibility.Visible : Visibility.Collapsed;
+            BatteryIndicator.Visibility = battery.HasBattery ? Visibility.Visible : Visibility.Collapsed;
             BatteryText.Text = battery.Percentage is int percentage ? $"{percentage}%" : "—";
             BatteryFill.Width = battery.Charging ? 0 : 14.5 * battery.Percentage.GetValueOrDefault() / 100;
             BatteryCharging.Visibility = battery.Charging ? Visibility.Visible : Visibility.Collapsed;
-            BatteryButton.ToolTip = $"电池 {BatteryText.Text}{(battery.Charging ? " · 充电中" : "")}";
+            BatteryIndicator.ToolTip = $"电池 {BatteryText.Text}{(battery.Charging ? " · 充电中" : "")}";
 
             WifiDisconnected.Visibility = wifi == false ? Visibility.Visible : Visibility.Collapsed;
-            WifiButton.ToolTip = wifi switch
+            WifiIcon.ToolTip = wifi switch
             {
                 true => "Wi-Fi 已连接",
                 false => "Wi-Fi 未连接",
@@ -231,7 +242,7 @@ public partial class MainWindow : Window
             var silent = audio is { Muted: true } or { Percentage: 0 };
             VolumeWaves.Visibility = !silent && audio.HasValue ? Visibility.Visible : Visibility.Collapsed;
             VolumeMute.Visibility = silent ? Visibility.Visible : Visibility.Collapsed;
-            VolumeButton.ToolTip = audio is { } output
+            VolumeIcon.ToolTip = audio is { } output
                 ? (output.Muted ? "已静音" : $"音量 {output.Percentage}%")
                 : "音量状态不可用";
         }
@@ -241,10 +252,51 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void QuickSettings_Click(object sender, RoutedEventArgs e) =>
-        await Task.Run(SystemShortcuts.OpenQuickSettings);
+    private async void QuickSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if (_openingQuickSettings || _closing)
+        {
+            return;
+        }
 
-    private void InputLanguage_Click(object sender, RoutedEventArgs e) => SystemShortcuts.SwitchInputLanguage();
+        _openingQuickSettings = true;
+        try
+        {
+            var corner = PointToScreen(new Point(ActualWidth, ActualHeight));
+            var gap = (int)Math.Round(8 * VisualTreeHelper.GetDpi(this).DpiScaleY);
+            var token = _windowLifetime.Token;
+            await Task.Run(() => SystemShortcuts.OpenQuickSettings((int)corner.X, (int)corner.Y, gap, token));
+        }
+        finally
+        {
+            _openingQuickSettings = false;
+        }
+    }
+
+    private async void RefreshInputIndicator(object? sender, EventArgs e)
+    {
+        if (_inputRefreshPending)
+        {
+            return;
+        }
+
+        _inputRefreshPending = true;
+        try
+        {
+            var input = await Task.Run(SystemStatus.ReadInputLanguage);
+            if (_closing)
+            {
+                return;
+            }
+
+            InputText.Text = input.Label;
+            InputIndicator.ToolTip = input.Name;
+        }
+        finally
+        {
+            _inputRefreshPending = false;
+        }
+    }
 
     private void RefreshClock(object? sender, EventArgs e)
     {

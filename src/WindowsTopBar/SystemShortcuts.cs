@@ -1,38 +1,115 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Windows;
 using System.Windows.Automation;
 
 namespace WindowsTopBar;
 
 internal static class SystemShortcuts
 {
-    public static void OpenQuickSettings()
+    public static async Task OpenQuickSettings(int right, int top, int gap, CancellationToken cancellationToken)
     {
+        if (IsQuickSettings(GetForegroundWindow()))
+        {
+            SendWindowsShortcut(0x41);
+            return;
+        }
+
+        if (!InvokeTaskbar(FindQuickSettingsButton))
+        {
+            SendWindowsShortcut(0x41);
+        }
+
         try
         {
-            var taskbar = FindWindowW("Shell_TrayWnd", null);
-            if (taskbar != 0)
+            // The visible content slides into place inside the shell host.
+            await Task.Delay(300, cancellationToken).ConfigureAwait(false);
+            for (int attempt = 0; attempt < 6; attempt++)
             {
-                var button = AutomationElement.FromHandle(taskbar).FindFirst(TreeScope.Descendants,
-                    new AndCondition(
-                        new PropertyCondition(AutomationElement.AutomationIdProperty, "SystemTrayIcon"),
-                        new PropertyCondition(AutomationElement.ClassNameProperty, "SystemTray.OmniButtonCenter")));
-                if (button?.TryGetCurrentPattern(InvokePattern.Pattern, out var pattern) == true)
+                await Task.Delay(90, cancellationToken).ConfigureAwait(false);
+                var panel = GetForegroundWindow();
+                if (IsQuickSettings(panel) && TryPositionPanel(panel, right, top, gap))
                 {
-                    ((InvokePattern)pattern).Invoke();
                     return;
                 }
             }
         }
-        catch (Exception error) when (error is ElementNotAvailableException or InvalidOperationException or COMException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            Trace.TraceWarning("Could not invoke the taskbar's Quick Settings button: {0}", error.Message);
         }
-
-        SendWindowsShortcut(0x41);
     }
 
-    public static void SwitchInputLanguage() => SendWindowsShortcut(0x20);
+    private static AutomationElement? FindQuickSettingsButton() => GetTaskbar()?.FindFirst(TreeScope.Descendants,
+        new AndCondition(
+            new PropertyCondition(AutomationElement.AutomationIdProperty, "SystemTrayIcon"),
+            new PropertyCondition(AutomationElement.ClassNameProperty, "SystemTray.OmniButtonCenter")));
+
+    private static AutomationElement? GetTaskbar()
+    {
+        var taskbar = FindWindowW("Shell_TrayWnd", null);
+        return taskbar == 0 ? null : AutomationElement.FromHandle(taskbar);
+    }
+
+    private static bool InvokeTaskbar(Func<AutomationElement?> findButton)
+    {
+        try
+        {
+            if (findButton()?.TryGetCurrentPattern(InvokePattern.Pattern, out var pattern) == true)
+            {
+                ((InvokePattern)pattern).Invoke();
+                return true;
+            }
+        }
+        catch (Exception error) when (IsAutomationFailure(error))
+        {
+            Trace.TraceWarning("Could not invoke a taskbar button: {0}", error.Message);
+        }
+
+        return false;
+    }
+
+    private static bool TryPositionPanel(nint window, int right, int top, int gap)
+    {
+        try
+        {
+            // The shell host can span the whole work area. Anchor the visible content inside it.
+            var region = AutomationElement.FocusedElement;
+            while (region is not null && region.Current.AutomationId != "ControlCenterRegion")
+            {
+                region = TreeWalker.RawViewWalker.GetParent(region);
+            }
+            var bounds = region?.Current.BoundingRectangle ?? Rect.Empty;
+            if (bounds.IsEmpty || bounds.Width <= 0 || bounds.Height <= 0 ||
+                !GetWindowRect(window, out var host) || GetForegroundWindow() != window)
+            {
+                return false;
+            }
+
+            const uint noResizeNoZOrderNoActivate = 0x0015;
+            return SetWindowPos(window, 0, host.Left + right - gap - (int)bounds.Right,
+                host.Top + top + gap - (int)bounds.Top, 0, 0, noResizeNoZOrderNoActivate);
+        }
+        catch (Exception error) when (IsAutomationFailure(error))
+        {
+            return false;
+        }
+    }
+
+    private static bool IsAutomationFailure(Exception error) =>
+        error is ElementNotAvailableException or InvalidOperationException or COMException or ArgumentException;
+
+    private static bool IsQuickSettings(nint window)
+    {
+        var name = new System.Text.StringBuilder(32);
+        return window != 0 && GetClassNameW(window, name, name.Capacity) != 0 &&
+            name.ToString() == "ControlCenterWindow";
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WindowRect
+    {
+        public int Left, Top, Right, Bottom;
+    }
 
     private static void SendWindowsShortcut(ushort key)
     {
@@ -87,4 +164,16 @@ internal static class SystemShortcuts
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     private static extern nint FindWindowW(string className, string? windowName);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern int GetClassNameW(nint window, System.Text.StringBuilder className, int size);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool GetWindowRect(nint window, out WindowRect bounds);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool SetWindowPos(nint window, nint order, int x, int y, int width, int height, uint flags);
 }

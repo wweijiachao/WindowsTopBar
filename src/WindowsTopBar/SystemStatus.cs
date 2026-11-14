@@ -5,6 +5,13 @@ namespace WindowsTopBar;
 
 internal static class SystemStatus
 {
+    private const uint WmImeControl = 0x0283;
+    private const uint GetConversionMode = 1;
+    private const uint GetOpenStatus = 5;
+    private const uint AbortIfHung = 2;
+    private const uint ImeQueryTimeout = 80;
+    private const uint NativeConversion = 1;
+
     public static (string Label, string Name) ReadInputLanguage()
     {
         var foreground = GetForegroundWindow();
@@ -19,9 +26,19 @@ internal static class SystemStatus
         try
         {
             var culture = CultureInfo.GetCultureInfo(languageId);
+            if (culture.TwoLetterISOLanguageName == "zh")
+            {
+                return ReadChineseMode(foreground, thread) switch
+                {
+                    true => ("中", "中文输入模式"),
+                    false => ("英", "英文输入模式"),
+                    null => ("—", "无法读取输入法的中英文模式")
+                };
+            }
+
             var label = culture.TwoLetterISOLanguageName switch
             {
-                "zh" => "中",
+                "en" => "英",
                 "ja" => "日",
                 "ko" => "한",
                 var code => code.ToUpperInvariant()
@@ -33,6 +50,32 @@ internal static class SystemStatus
             return ("—", "输入语言未知");
         }
     }
+
+    private static bool? ReadChineseMode(nint foreground, uint thread)
+    {
+        if (foreground == 0 || thread == 0)
+        {
+            return null;
+        }
+
+        var info = new GuiThreadInfo { Size = Marshal.SizeOf<GuiThreadInfo>() };
+        var target = GetGUIThreadInfo(thread, ref info) && info.Focus != 0 ? info.Focus : foreground;
+        var ime = ImmGetDefaultIMEWnd(target);
+        if (ime == 0 || !TryReadIme(ime, GetOpenStatus, out var open) || open > 1)
+        {
+            return null;
+        }
+
+        if (open == 0)
+        {
+            return false;
+        }
+
+        return TryReadIme(ime, GetConversionMode, out var conversion) ? (conversion & NativeConversion) != 0 : null;
+    }
+
+    private static bool TryReadIme(nint ime, uint command, out nuint value) =>
+        SendMessageTimeoutW(ime, WmImeControl, command, 0, AbortIfHung, ImeQueryTimeout, out value) != 0;
 
     public static (int? Percentage, bool Charging, bool HasBattery) ReadBattery()
     {
@@ -92,6 +135,14 @@ internal static class SystemStatus
         public uint BatteryLifeTime, BatteryFullLifeTime;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct GuiThreadInfo
+    {
+        public int Size, Flags;
+        public nint Active, Focus, Capture, MenuOwner, MoveSize, Caret;
+        public int CaretLeft, CaretTop, CaretRight, CaretBottom;
+    }
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct WlanInterface
     {
@@ -112,6 +163,16 @@ internal static class SystemStatus
 
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern nint GetKeyboardLayout(uint threadId);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool GetGUIThreadInfo(uint threadId, ref GuiThreadInfo info);
+
+    [DllImport("imm32.dll", ExactSpelling = true)]
+    private static extern nint ImmGetDefaultIMEWnd(nint window);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern nint SendMessageTimeoutW(nint window, uint message, nuint command, nint parameter,
+        uint flags, uint timeout, out nuint result);
 
     [DllImport("wlanapi.dll", ExactSpelling = true)]
     private static extern uint WlanOpenHandle(uint version, nint reserved, out uint negotiatedVersion, out nint client);
