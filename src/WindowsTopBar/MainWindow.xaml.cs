@@ -309,7 +309,23 @@ public partial class MainWindow : Window
             {
                 // TextBlock preserves underscores in the filename as literal text.
                 var name = Path.GetFileNameWithoutExtension(path);
-                var item = new MenuItem { Header = new TextBlock { Text = name } };
+                var initial = name.Length == 0 ? string.Empty : StringInfo.GetNextTextElement(name);
+                if (initial.Length == 1 && initial[0] is >= 'a' and <= 'z')
+                {
+                    initial = initial.ToUpperInvariant();
+                }
+
+                var item = new MenuItem
+                {
+                    Header = new TextBlock { Text = name },
+                    Icon = new TextBlock
+                    {
+                        Text = initial,
+                        FontWeight = FontWeights.Bold,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center
+                    }
+                };
                 AutomationProperties.SetName(item, name);
                 item.Click += (_, _) => LaunchShortcut(path);
                 menu.Items.Add(item);
