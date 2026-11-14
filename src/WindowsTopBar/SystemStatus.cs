@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace WindowsTopBar;
 
@@ -12,7 +13,7 @@ internal static class SystemStatus
     private const uint ImeQueryTimeout = 80;
     private const uint NativeConversion = 1;
 
-    public static (string Label, string Name) ReadInputLanguage()
+    public static (string Label, string Name)? ReadInputLanguage()
     {
         var foreground = GetForegroundWindow();
         var thread = foreground == 0 ? 0 : GetWindowThreadProcessId(foreground, out _);
@@ -20,7 +21,7 @@ internal static class SystemStatus
         var languageId = (int)(layout & 0xFFFF);
         if (languageId == 0)
         {
-            return ("—", "输入语言未知");
+            return null;
         }
 
         try
@@ -32,7 +33,7 @@ internal static class SystemStatus
                 {
                     true => ("中", "中文输入模式"),
                     false => ("英", "英文输入模式"),
-                    null => ("—", "无法读取输入法的中英文模式")
+                    null => null
                 };
             }
 
@@ -47,7 +48,7 @@ internal static class SystemStatus
         }
         catch (CultureNotFoundException)
         {
-            return ("—", "输入语言未知");
+            return null;
         }
     }
 
@@ -88,34 +89,40 @@ internal static class SystemStatus
             (status.BatteryFlags & 8) != 0, (status.BatteryFlags & 128) == 0);
     }
 
-    public static bool? ReadWifiConnected()
+    public static (bool? Connected, string? Ssid) ReadWifi()
     {
         if (WlanOpenHandle(2, 0, out _, out var client) != 0)
         {
-            return null;
+            return (null, null);
         }
 
         try
         {
             if (WlanEnumInterfaces(client, 0, out var list) != 0)
             {
-                return null;
+                return (null, null);
             }
 
             try
             {
                 var count = Marshal.ReadInt32(list);
                 var size = Marshal.SizeOf<WlanInterface>();
+                var connected = false;
                 for (var index = 0; index < count; index++)
                 {
                     var adapter = Marshal.PtrToStructure<WlanInterface>(list + 8 + index * size);
                     if (adapter.State == 1) // wlan_interface_state_connected
                     {
-                        return true;
+                        connected = true;
+                        var ssid = ReadConnectedSsid(client, adapter.Id);
+                        if (ssid is not null)
+                        {
+                            return (true, ssid);
+                        }
                     }
                 }
 
-                return false;
+                return (connected, null);
             }
             finally
             {
@@ -126,6 +133,44 @@ internal static class SystemStatus
         {
             WlanCloseHandle(client, 0);
         }
+    }
+
+    private static string? ReadConnectedSsid(nint client, Guid adapter)
+    {
+        const uint currentConnection = 7;
+        if (WlanQueryInterface(client, in adapter, currentConnection, 0, out var size, out var data, 0) != 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            if (data == 0 || size < Marshal.SizeOf<WlanConnectionSsid>())
+            {
+                return null;
+            }
+
+            var connection = Marshal.PtrToStructure<WlanConnectionSsid>(data);
+            return connection.SsidLength is > 0 and <= 32
+                ? Encoding.UTF8.GetString(connection.Ssid, 0, (int)connection.SsidLength)
+                : null;
+        }
+        finally
+        {
+            WlanFreeMemory(data);
+        }
+    }
+
+    // Prefix of WLAN_CONNECTION_ATTRIBUTES through the association's DOT11_SSID.
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct WlanConnectionSsid
+    {
+        public int State, ConnectionMode;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
+        public string ProfileName;
+        public uint SsidLength;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
+        public byte[] Ssid;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -179,6 +224,10 @@ internal static class SystemStatus
 
     [DllImport("wlanapi.dll", ExactSpelling = true)]
     private static extern uint WlanEnumInterfaces(nint client, nint reserved, out nint list);
+
+    [DllImport("wlanapi.dll", ExactSpelling = true)]
+    private static extern uint WlanQueryInterface(nint client, in Guid adapter, uint operation, nint reserved,
+        out uint size, out nint data, nint opcodeType);
 
     [DllImport("wlanapi.dll", ExactSpelling = true)]
     private static extern void WlanFreeMemory(nint memory);

@@ -13,6 +13,10 @@
         Background="#F1EFEB"
         Foreground="#33353A">
     <Window.Resources>
+        <Style x:Key="StatusTooltipTiming" TargetType="FrameworkElement">
+            <Setter Property="ToolTipService.InitialShowDelay" Value="500" />
+            <Setter Property="ToolTipService.BetweenShowDelay" Value="0" />
+        </Style>
         <Style x:Key="StatusButton" TargetType="Button">
             <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Window}}" />
             <Setter Property="Padding" Value="8,0" />
@@ -61,26 +65,29 @@
             </ContextMenu>
         </Grid.ContextMenu>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,14,0">
-            <Grid x:Name="InputIndicator" MinWidth="33" Background="Transparent"
+            <Grid x:Name="InputIndicator" MinWidth="33" Background="Transparent" Style="{StaticResource StatusTooltipTiming}"
                   ToolTip="输入法" AutomationProperties.Name="输入法">
-                <TextBlock x:Name="InputText" Text="—" FontSize="12" FontWeight="SemiBold"
+                <TextBlock x:Name="InputText" FontSize="12" FontWeight="SemiBold"
                            HorizontalAlignment="Center" VerticalAlignment="Center" />
             </Grid>
             <Button x:Name="QuickSettingsButton" Style="{StaticResource StatusButton}" Click="QuickSettings_Click" AutomationProperties.Name="打开快速设置">
                 <StackPanel Orientation="Horizontal">
-                    <Canvas x:Name="WifiIcon" Width="17" Height="16" Margin="0,0,14,0" Background="Transparent">
+                    <Canvas x:Name="WifiIcon" Width="17" Height="16" Margin="0,0,14,0" Background="Transparent"
+                            Style="{StaticResource StatusTooltipTiming}">
                         <Path Style="{StaticResource StatusGlyph}"
                               Data="M 1.5,5.5 Q 8.5,-0.5 15.5,5.5 M 3.8,8 Q 8.5,4 13.2,8 M 6,10.4 Q 8.5,8.3 11,10.4" />
                         <Ellipse Width="2" Height="2" Canvas.Left="7.5" Canvas.Top="12.3"
                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
                         <Path x:Name="WifiDisconnected" Style="{StaticResource StatusGlyph}" Data="M 2,2 L 15,14" Visibility="Collapsed" />
                     </Canvas>
-                    <Canvas x:Name="VolumeIcon" Width="17" Height="16" Background="Transparent">
+                    <Canvas x:Name="VolumeIcon" Width="17" Height="16" Background="Transparent"
+                            Style="{StaticResource StatusTooltipTiming}">
                         <Path Style="{StaticResource StatusGlyph}" Data="M 1.5,6 L 4.4,6 8,3 8,13 4.4,10 1.5,10 Z" />
                         <Path x:Name="VolumeWaves" Style="{StaticResource StatusGlyph}" Data="M 11,5 Q 14,8 11,11 M 13.3,2.8 Q 18.3,8 13.3,13.2" />
                         <Path x:Name="VolumeMute" Style="{StaticResource StatusGlyph}" Data="M 11,6 L 15,10 M 15,6 L 11,10" Visibility="Collapsed" />
                     </Canvas>
-                    <StackPanel x:Name="BatteryIndicator" Orientation="Horizontal" Margin="14,0,0,0" Background="Transparent">
+                    <StackPanel x:Name="BatteryIndicator" Orientation="Horizontal" Margin="14,0,0,0" Background="Transparent"
+                                Style="{StaticResource StatusTooltipTiming}">
                         <TextBlock x:Name="BatteryText" Text="—" VerticalAlignment="Center" Margin="0,0,5,0" />
                         <Canvas Width="23" Height="15">
                             <Rectangle Width="19" Height="11" Canvas.Left="1" Canvas.Top="2" RadiusX="2.5" RadiusY="2.5"

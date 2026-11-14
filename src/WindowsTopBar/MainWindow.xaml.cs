@@ -219,7 +219,7 @@ public partial class MainWindow : Window
         try
         {
             var (battery, wifi, audio) = await Task.Run(() =>
-                (SystemStatus.ReadBattery(), SystemStatus.ReadWifiConnected(), AudioStatus.Read()));
+                (SystemStatus.ReadBattery(), SystemStatus.ReadWifi(), AudioStatus.Read()));
             if (_closing)
             {
                 return;
@@ -231,13 +231,13 @@ public partial class MainWindow : Window
             BatteryCharging.Visibility = battery.Charging ? Visibility.Visible : Visibility.Collapsed;
             BatteryIndicator.ToolTip = $"电池 {BatteryText.Text}{(battery.Charging ? " · 充电中" : "")}";
 
-            WifiDisconnected.Visibility = wifi == false ? Visibility.Visible : Visibility.Collapsed;
-            WifiIcon.ToolTip = wifi switch
+            WifiDisconnected.Visibility = wifi.Connected == false ? Visibility.Visible : Visibility.Collapsed;
+            WifiIcon.ToolTip = wifi.Ssid ?? (wifi.Connected switch
             {
-                true => "Wi-Fi 已连接",
+                true => "Wi-Fi 已连接，SSID 不可用",
                 false => "Wi-Fi 未连接",
                 null => "Wi-Fi 状态不可用"
-            };
+            });
 
             var silent = audio is { Muted: true } or { Percentage: 0 };
             VolumeWaves.Visibility = !silent && audio.HasValue ? Visibility.Visible : Visibility.Collapsed;
@@ -284,13 +284,13 @@ public partial class MainWindow : Window
         try
         {
             var input = await Task.Run(SystemStatus.ReadInputLanguage);
-            if (_closing)
+            if (_closing || input is not { } detected)
             {
                 return;
             }
 
-            InputText.Text = input.Label;
-            InputIndicator.ToolTip = input.Name;
+            InputText.Text = detected.Label;
+            InputIndicator.ToolTip = detected.Name;
         }
         finally
         {
