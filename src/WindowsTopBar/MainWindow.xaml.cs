@@ -34,13 +34,13 @@ public partial class MainWindow : Window
     private DispatcherOperation? _pendingAppearance;
     private GradientStop? _acrylicEdge;
     private Color _acrylicTint;
-    private TopBarTheme _theme;
-
-    private enum TopBarTheme { System, Dark, Light }
+    private AppearanceSettings _settings;
 
     public MainWindow()
     {
         InitializeComponent();
+        _settings = AppearanceSettings.Load(AppearanceSettings.FilePath);
+        UpdateThemeMenu();
         _clock.Tick += RefreshClock;
         _tintTimer.Tick += RefreshEdgeTint;
     }
@@ -81,9 +81,9 @@ public partial class MainWindow : Window
 
     private void RefreshAppearance()
     {
-        var dark = _theme == TopBarTheme.Dark ||
-            (_theme == TopBarTheme.System && Registry.GetValue(PersonalizeKey, "SystemUsesLightTheme", 1) is 0);
-        ApplyAppearance(dark, AcrylicItem.IsChecked, SystemParameters.HighContrast);
+        var dark = _settings.Theme == TopBarTheme.Dark ||
+            (_settings.Theme == TopBarTheme.System && Registry.GetValue(PersonalizeKey, "SystemUsesLightTheme", 1) is 0);
+        ApplyAppearance(dark, _settings.AcrylicEnabled, SystemParameters.HighContrast);
     }
 
     private void ApplyAppearance(bool dark, bool acrylicEnabled, bool highContrast)
@@ -183,14 +183,41 @@ public partial class MainWindow : Window
 
     private void Theme_Click(object sender, RoutedEventArgs e)
     {
-        _theme = sender == DarkThemeItem ? TopBarTheme.Dark
+        var theme = sender == DarkThemeItem ? TopBarTheme.Dark
             : sender == LightThemeItem ? TopBarTheme.Light
             : TopBarTheme.System;
-        DarkThemeItem.IsChecked = _theme == TopBarTheme.Dark;
-        LightThemeItem.IsChecked = _theme == TopBarTheme.Light;
-        SystemThemeItem.IsChecked = _theme == TopBarTheme.System;
+        SaveAppearance(_settings with { Theme = theme });
+    }
+
+    private void Acrylic_Click(object sender, RoutedEventArgs e) =>
+        SaveAppearance(_settings with { AcrylicEnabled = AcrylicItem.IsChecked });
+
+    private void SaveAppearance(AppearanceSettings updated)
+    {
+        if (updated == _settings)
+        {
+            UpdateThemeMenu();
+            return;
+        }
+
+        if (!updated.TrySave(AppearanceSettings.FilePath))
+        {
+            UpdateThemeMenu();
+            MessageBox.Show(this, "无法保存顶栏配置，已恢复之前的选项。", "Windows Top Bar",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        _settings = updated;
+        UpdateThemeMenu();
         RefreshAppearance();
     }
 
-    private void Acrylic_Click(object sender, RoutedEventArgs e) => RefreshAppearance();
+    private void UpdateThemeMenu()
+    {
+        DarkThemeItem.IsChecked = _settings.Theme == TopBarTheme.Dark;
+        LightThemeItem.IsChecked = _settings.Theme == TopBarTheme.Light;
+        SystemThemeItem.IsChecked = _settings.Theme == TopBarTheme.System;
+        AcrylicItem.IsChecked = _settings.AcrylicEnabled;
+    }
 }
