@@ -11,6 +11,7 @@ internal sealed class MessengerWindows : IDisposable
     private const int ShellWindowActivated = 4;
     private const int ShellRudeAppActivated = 0x8004;
     private const uint WmClose = 0x0010;
+    private static readonly string[] QqProcesses = ["QQ"];
     private static readonly string[] WeChatProcesses = ["Weixin", "WeChat"];
     private nint _window;
     private uint _message;
@@ -107,39 +108,27 @@ internal sealed class MessengerWindows : IDisposable
     }
 
     public static (bool QQ, bool WeChat) ReadRunning() =>
-        (FindProcess("QQ", requireWindow: false) != 0, IsWeChatRunning());
+        (IsRunning(QqProcesses), IsRunning(WeChatProcesses));
 
-    private static bool IsWeChatRunning() =>
-        WeChatProcesses.Any(name => FindProcess(name, requireWindow: false) != 0);
+    private static bool IsRunning(string[] names) =>
+        names.Any(name => FindProcess(name, requireWindow: false) != 0);
 
-    public static async Task Activate(Messenger messenger, CancellationToken cancellationToken)
+    public static void Activate(Messenger messenger, CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested)
         {
             return;
         }
 
-        if (messenger == Messenger.WeChat)
+        var names = messenger == Messenger.QQ ? QqProcesses : WeChatProcesses;
+        // A tray-hidden window needs the client's own restore handler.
+        if (!TryActivateMainWindow(names) && IsRunning(names) && !cancellationToken.IsCancellationRequested)
         {
-            if (!TryActivateMainWindow(WeChatProcesses) && IsWeChatRunning() &&
-                !cancellationToken.IsCancellationRequested)
-            {
-                SystemShortcuts.SendWeChatOpenShortcut();
-            }
-
-            return;
+            SystemShortcuts.SendCtrlAltShortcut(messenger == Messenger.QQ ? 'X' : 'W');
         }
-
-        if (await SystemShortcuts.InvokeQqTrayIcon(cancellationToken).ConfigureAwait(false) ||
-            cancellationToken.IsCancellationRequested)
-        {
-            return;
-        }
-
-        TryActivateMainWindow("QQ");
     }
 
-    private static bool TryActivateMainWindow(params string[] names)
+    private static bool TryActivateMainWindow(string[] names)
     {
         foreach (var name in names)
         {

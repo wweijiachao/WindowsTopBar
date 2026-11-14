@@ -42,159 +42,6 @@ internal static class SystemShortcuts
         }
     }
 
-    public static async Task<bool> InvokeQqTrayIcon(CancellationToken cancellationToken)
-    {
-        AutomationElement? overflowButton = null;
-        bool openedOverflow = false;
-        ScreenPoint? originalCursor = null;
-        ScreenPoint revealPoint = default;
-        try
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var taskbarWindow = FindWindowW("Shell_TrayWnd", null);
-            if (taskbarWindow == 0)
-            {
-                return false;
-            }
-
-            if (TryGetHiddenTaskbarEdge(taskbarWindow, out revealPoint) &&
-                GetCursorPos(out var cursor) && SetCursorPos(revealPoint.X, revealPoint.Y))
-            {
-                originalCursor = cursor;
-                // Wait for Explorer to expose its tray controls after revealing the taskbar.
-                for (int attempt = 0; attempt < 6; attempt++)
-                {
-                    await Task.Delay(100, cancellationToken).ConfigureAwait(false);
-                    if (!TryGetHiddenTaskbarEdge(taskbarWindow, out _))
-                    {
-                        break;
-                    }
-                }
-            }
-
-            var taskbar = AutomationElement.FromHandle(taskbarWindow);
-            if (Invoke(FindQqTrayIcon(taskbar)))
-            {
-                return true;
-            }
-
-            if (GetTrayOverflow() is { } existingOverflow)
-            {
-                return Invoke(FindQqTrayIcon(existingOverflow));
-            }
-
-            overflowButton = taskbar.FindFirst(TreeScope.Descendants, new AndCondition(
-                new PropertyCondition(AutomationElement.AutomationIdProperty, "SystemTrayIcon"),
-                new OrCondition(
-                    new PropertyCondition(AutomationElement.NameProperty, "显示隐藏的图标"),
-                    new PropertyCondition(AutomationElement.NameProperty, "Show hidden icons"))));
-            openedOverflow = Invoke(overflowButton);
-            if (!openedOverflow)
-            {
-                return false;
-            }
-
-            for (int attempt = 0; attempt < 5; attempt++)
-            {
-                await Task.Delay(100, cancellationToken).ConfigureAwait(false);
-                if (GetTrayOverflow() is { } overflow && Invoke(FindQqTrayIcon(overflow)))
-                {
-                    return true;
-                }
-            }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch (Exception error) when (IsAutomationFailure(error))
-        {
-            Trace.TraceWarning("Could not invoke the QQ tray icon: {0}", error.Message);
-        }
-        finally
-        {
-            if (openedOverflow)
-            {
-                try
-                {
-                    if (GetTrayOverflow() is not null)
-                    {
-                        Invoke(overflowButton);
-                    }
-                }
-                catch (Exception error) when (IsAutomationFailure(error))
-                {
-                    Trace.TraceWarning("Could not close the tray overflow: {0}", error.Message);
-                }
-            }
-
-            if (originalCursor is { } saved && GetCursorPos(out var current) &&
-                current.X == revealPoint.X && current.Y == revealPoint.Y)
-            {
-                SetCursorPos(saved.X, saved.Y);
-            }
-        }
-
-        return false;
-    }
-
-    private static bool TryGetHiddenTaskbarEdge(nint taskbar, out ScreenPoint point)
-    {
-        point = default;
-        var monitor = MonitorFromWindow(taskbar, 2); // MONITOR_DEFAULTTONEAREST
-        var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
-        if (!GetWindowRect(taskbar, out var tray) || !GetMonitorInfoW(monitor, ref info))
-        {
-            return false;
-        }
-
-        // When auto-hidden, Explorer leaves only a thin strip within the monitor.
-        var screen = info.Monitor;
-        if (tray.Bottom > screen.Bottom && screen.Bottom - tray.Top <= 4)
-        {
-            point = new ScreenPoint((tray.Left + tray.Right) / 2, screen.Bottom - 1);
-        }
-        else if (tray.Top < screen.Top && tray.Bottom - screen.Top <= 4)
-        {
-            point = new ScreenPoint((tray.Left + tray.Right) / 2, screen.Top);
-        }
-        else
-        {
-            return false;
-        }
-
-        point = point with { X = Math.Clamp(point.X, screen.Left, screen.Right - 1) };
-        return true;
-    }
-
-    private static AutomationElement? GetTrayOverflow()
-    {
-        var window = FindWindowW("TopLevelWindowForOverflowXamlIsland", null);
-        if (window == 0 || !IsWindowVisible(window))
-        {
-            window = FindWindowW("NotifyIconOverflowWindow", null);
-        }
-
-        return window != 0 && IsWindowVisible(window) ? AutomationElement.FromHandle(window) : null;
-    }
-
-    private static AutomationElement? FindQqTrayIcon(AutomationElement tray)
-    {
-        var icons = tray.FindAll(TreeScope.Descendants,
-            new PropertyCondition(AutomationElement.AutomationIdProperty, "NotifyItemIcon"));
-        foreach (AutomationElement icon in icons)
-        {
-            var name = icon.Current.Name.AsSpan().TrimStart();
-            var separator = name.IndexOfAny(":：\r\n");
-            var label = (separator < 0 ? name : name[..separator]).TrimEnd();
-            if (label.Equals("QQ", StringComparison.OrdinalIgnoreCase) && !icon.Current.IsOffscreen)
-            {
-                return icon;
-            }
-        }
-
-        return null;
-    }
-
     private static AutomationElement? FindQuickSettingsButton() => GetTaskbar()?.FindFirst(TreeScope.Descendants,
         new AndCondition(
             new PropertyCondition(AutomationElement.AutomationIdProperty, "SystemTrayIcon"),
@@ -274,17 +121,6 @@ internal static class SystemShortcuts
         public int Left, Top, Right, Bottom;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    private record struct ScreenPoint(int X, int Y);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct MonitorInfo
-    {
-        public int Size;
-        public WindowRect Monitor, WorkArea;
-        public uint Flags;
-    }
-
     private static void SendWindowsShortcut(ushort key)
     {
         if (!TrySendShortcut(LeftWindows, key))
@@ -293,22 +129,21 @@ internal static class SystemShortcuts
         }
     }
 
-    public static void SendWeChatOpenShortcut()
+    public static void SendCtrlAltShortcut(ushort key)
     {
         const ushort shift = 0x10;
         const ushort control = 0x11;
         const ushort alt = 0x12;
         const ushort rightWindows = 0x5C;
-        const ushort openKey = 'W';
         if (GetAsyncKeyState(shift) < 0 || GetAsyncKeyState(control) < 0 || GetAsyncKeyState(alt) < 0 ||
-            GetAsyncKeyState(LeftWindows) < 0 || GetAsyncKeyState(rightWindows) < 0 || GetAsyncKeyState(openKey) < 0)
+            GetAsyncKeyState(LeftWindows) < 0 || GetAsyncKeyState(rightWindows) < 0 || GetAsyncKeyState(key) < 0)
         {
             return;
         }
 
-        if (!TrySendShortcut(control, alt, openKey))
+        if (!TrySendShortcut(control, alt, key))
         {
-            Trace.TraceWarning("Could not send the WeChat open shortcut.");
+            Trace.TraceWarning("Could not send Ctrl+Alt+{0}.", (char)key);
         }
     }
 
@@ -385,21 +220,6 @@ internal static class SystemShortcuts
 
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern nint GetForegroundWindow();
-
-    [DllImport("user32.dll", ExactSpelling = true)]
-    private static extern bool IsWindowVisible(nint window);
-
-    [DllImport("user32.dll", ExactSpelling = true)]
-    private static extern nint MonitorFromWindow(nint window, uint flags);
-
-    [DllImport("user32.dll", ExactSpelling = true)]
-    private static extern bool GetMonitorInfoW(nint monitor, ref MonitorInfo info);
-
-    [DllImport("user32.dll", ExactSpelling = true)]
-    private static extern bool GetCursorPos(out ScreenPoint point);
-
-    [DllImport("user32.dll", ExactSpelling = true)]
-    private static extern bool SetCursorPos(int x, int y);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     private static extern int GetClassNameW(nint window, System.Text.StringBuilder className, int size);
