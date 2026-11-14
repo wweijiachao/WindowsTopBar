@@ -1,0 +1,29 @@
+<Window x:Class="WindowsTopBar.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Windows Top Bar"
+        Left="0"
+        Top="0"
+        Width="640"
+        Height="32"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Background="#F1EFEB"
+        Foreground="#33353A">
+    <Grid Background="Transparent">
+        <Grid.ContextMenu>
+            <ContextMenu>
+                <MenuItem Header="退出" Click="Exit_Click" />
+            </ContextMenu>
+        </Grid.ContextMenu>
+        <TextBlock x:Name="ClockText"
+                   Margin="0,0,14,0"
+                   HorizontalAlignment="Right"
+                   VerticalAlignment="Center"
+                   FontSize="13"
+                   FontWeight="SemiBold"
+                   AutomationProperties.Name="当前时间" />
+    </Grid>
+</Window>

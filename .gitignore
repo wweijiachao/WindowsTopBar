@@ -1,0 +1,25 @@
+# .NET build, publish, and test output
+[Bb]in/
+[Oo]bj/
+[Aa]rtifacts/
+[Tt]est[Rr]esults/
+*.binlog
+*.trx
+
+# IDE and local tooling
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Local settings and diagnostics
+.env
+.env.*
+!.env.example
+*.local.json
+*.log
+*.dmp
+Thumbs.db
+Desktop.ini
