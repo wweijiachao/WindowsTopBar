@@ -55,13 +55,19 @@ internal sealed class MessengerWindows : IDisposable
         (FindProcess("QQ", requireWindow: false) != 0,
             WeChatProcesses.Any(name => FindProcess(name, requireWindow: false) != 0));
 
-    public static void Activate(Messenger messenger)
+    public static async Task Activate(Messenger messenger, CancellationToken cancellationToken)
     {
-        var names = messenger == Messenger.QQ ? ["QQ"] : WeChatProcesses;
+        if (await SystemShortcuts.InvokeMessengerTrayIcon(messenger, cancellationToken).ConfigureAwait(false) ||
+            cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        string[] names = messenger == Messenger.QQ ? ["QQ"] : WeChatProcesses;
         foreach (var name in names)
         {
             var window = FindProcess(name, requireWindow: true);
-            if (window == 0)
+            if (window == 0 || !IsWindowVisible(window) || !IsWindowEnabled(window))
             {
                 continue;
             }
@@ -142,4 +148,10 @@ internal sealed class MessengerWindows : IDisposable
 
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern bool SetForegroundWindow(nint window);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool IsWindowVisible(nint window);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool IsWindowEnabled(nint window);
 }

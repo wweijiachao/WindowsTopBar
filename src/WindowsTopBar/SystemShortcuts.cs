@@ -39,6 +39,109 @@ internal static class SystemShortcuts
         }
     }
 
+    public static async Task<bool> InvokeMessengerTrayIcon(Messenger messenger, CancellationToken cancellationToken)
+    {
+        AutomationElement? overflowButton = null;
+        bool openedOverflow = false;
+        try
+        {
+            if (cancellationToken.IsCancellationRequested || GetTaskbar() is not { } taskbar)
+            {
+                return false;
+            }
+
+            if (Invoke(FindMessengerTrayIcon(taskbar, messenger)))
+            {
+                return true;
+            }
+
+            if (GetTrayOverflow() is { } existingOverflow)
+            {
+                return Invoke(FindMessengerTrayIcon(existingOverflow, messenger));
+            }
+
+            overflowButton = taskbar.FindFirst(TreeScope.Descendants, new AndCondition(
+                new PropertyCondition(AutomationElement.AutomationIdProperty, "SystemTrayIcon"),
+                new OrCondition(
+                    new PropertyCondition(AutomationElement.NameProperty, "显示隐藏的图标"),
+                    new PropertyCondition(AutomationElement.NameProperty, "Show hidden icons"))));
+            openedOverflow = Invoke(overflowButton);
+            if (!openedOverflow)
+            {
+                return false;
+            }
+
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                await Task.Delay(100, cancellationToken).ConfigureAwait(false);
+                if (GetTrayOverflow() is { } overflow && Invoke(FindMessengerTrayIcon(overflow, messenger)))
+                {
+                    return true;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception error) when (IsAutomationFailure(error))
+        {
+            Trace.TraceWarning("Could not invoke the messenger's tray icon: {0}", error.Message);
+        }
+        finally
+        {
+            if (openedOverflow)
+            {
+                try
+                {
+                    if (GetTrayOverflow() is not null)
+                    {
+                        Invoke(overflowButton);
+                    }
+                }
+                catch (Exception error) when (IsAutomationFailure(error))
+                {
+                    Trace.TraceWarning("Could not close the tray overflow: {0}", error.Message);
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static AutomationElement? GetTrayOverflow()
+    {
+        var window = FindWindowW("TopLevelWindowForOverflowXamlIsland", null);
+        if (window == 0 || !IsWindowVisible(window))
+        {
+            window = FindWindowW("NotifyIconOverflowWindow", null);
+        }
+
+        return window != 0 && IsWindowVisible(window) ? AutomationElement.FromHandle(window) : null;
+    }
+
+    private static AutomationElement? FindMessengerTrayIcon(AutomationElement tray, Messenger messenger)
+    {
+        var icons = tray.FindAll(TreeScope.Descendants,
+            new PropertyCondition(AutomationElement.AutomationIdProperty, "NotifyItemIcon"));
+        foreach (AutomationElement icon in icons)
+        {
+            var name = icon.Current.Name.AsSpan().TrimStart();
+            var separator = name.IndexOfAny(":：\r\n");
+            var label = (separator < 0 ? name : name[..separator]).TrimEnd();
+            var matches = messenger == Messenger.QQ
+                ? label.Equals("QQ", StringComparison.OrdinalIgnoreCase)
+                : label.Equals("微信", StringComparison.Ordinal) ||
+                    label.Equals("Weixin", StringComparison.OrdinalIgnoreCase) ||
+                    label.Equals("WeChat", StringComparison.OrdinalIgnoreCase);
+            if (matches && !icon.Current.IsOffscreen)
+            {
+                return icon;
+            }
+        }
+
+        return null;
+    }
+
     private static AutomationElement? FindQuickSettingsButton() => GetTaskbar()?.FindFirst(TreeScope.Descendants,
         new AndCondition(
             new PropertyCondition(AutomationElement.AutomationIdProperty, "SystemTrayIcon"),
@@ -54,11 +157,7 @@ internal static class SystemShortcuts
     {
         try
         {
-            if (findButton()?.TryGetCurrentPattern(InvokePattern.Pattern, out var pattern) == true)
-            {
-                ((InvokePattern)pattern).Invoke();
-                return true;
-            }
+            return Invoke(findButton());
         }
         catch (Exception error) when (IsAutomationFailure(error))
         {
@@ -66,6 +165,17 @@ internal static class SystemShortcuts
         }
 
         return false;
+    }
+
+    private static bool Invoke(AutomationElement? button)
+    {
+        if (button?.TryGetCurrentPattern(InvokePattern.Pattern, out var pattern) != true)
+        {
+            return false;
+        }
+
+        ((InvokePattern)pattern).Invoke();
+        return true;
     }
 
     private static bool TryPositionPanel(nint window, int right, int top, int gap)
@@ -167,6 +277,9 @@ internal static class SystemShortcuts
 
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool IsWindowVisible(nint window);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     private static extern int GetClassNameW(nint window, System.Text.StringBuilder className, int size);

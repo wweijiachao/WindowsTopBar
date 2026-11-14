@@ -54,6 +54,7 @@ public partial class MainWindow : Window
     private bool _closing;
     private readonly CancellationTokenSource _windowLifetime = new();
     private bool _openingQuickSettings;
+    private bool _openingMessenger;
 
     public MainWindow()
     {
@@ -295,9 +296,28 @@ public partial class MainWindow : Window
         }
     }
 
-    private void QQ_Click(object sender, RoutedEventArgs e) => MessengerWindows.Activate(Messenger.QQ);
+    private async void QQ_Click(object sender, RoutedEventArgs e) => await OpenMessenger(Messenger.QQ);
 
-    private void WeChat_Click(object sender, RoutedEventArgs e) => MessengerWindows.Activate(Messenger.WeChat);
+    private async void WeChat_Click(object sender, RoutedEventArgs e) => await OpenMessenger(Messenger.WeChat);
+
+    private async Task OpenMessenger(Messenger messenger)
+    {
+        if (_openingMessenger || _closing)
+        {
+            return;
+        }
+
+        _openingMessenger = true;
+        try
+        {
+            var token = _windowLifetime.Token;
+            await Task.Run(() => MessengerWindows.Activate(messenger, token));
+        }
+        finally
+        {
+            _openingMessenger = false;
+        }
+    }
 
     private async void QuickSettings_Click(object sender, RoutedEventArgs e)
     {
