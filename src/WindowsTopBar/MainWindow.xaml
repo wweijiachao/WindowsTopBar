@@ -5,7 +5,7 @@
         Left="0"
         Top="0"
         Width="640"
-        Height="32"
+        Height="28"
         WindowStyle="None"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
@@ -26,7 +26,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Grid Background="Transparent" Margin="0,3">
+                        <Grid Background="Transparent" Margin="0,2">
                             <Border x:Name="Hover" Background="{TemplateBinding Foreground}" CornerRadius="4" Opacity="0" />
                             <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Grid>
