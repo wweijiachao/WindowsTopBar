@@ -1,6 +1,10 @@
 using System.ComponentModel;
 using System.Globalization;
+using System.IO;
 using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -293,6 +297,47 @@ public partial class MainWindow : Window
                     RepeatBehavior = new RepeatBehavior(4),
                     FillBehavior = FillBehavior.Stop
                 });
+        }
+    }
+
+    private void Shortcuts_Click(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu { PlacementTarget = ShortcutsButton, Placement = PlacementMode.Bottom };
+        try
+        {
+            foreach (var path in ShortcutDirectory.List(ShortcutDirectory.Folder))
+            {
+                // TextBlock preserves underscores in the filename as literal text.
+                var name = Path.GetFileNameWithoutExtension(path);
+                var item = new MenuItem { Header = new TextBlock { Text = name } };
+                AutomationProperties.SetName(item, name);
+                item.Click += (_, _) => LaunchShortcut(path);
+                menu.Items.Add(item);
+            }
+
+            if (menu.Items.Count == 0)
+            {
+                menu.Items.Add(new MenuItem { Header = "快捷方式目录为空", IsEnabled = false });
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            menu.Items.Add(new MenuItem { Header = "无法读取快捷方式目录", IsEnabled = false });
+        }
+
+        menu.IsOpen = true;
+    }
+
+    private void LaunchShortcut(string path)
+    {
+        try
+        {
+            ShortcutDirectory.Launch(path);
+        }
+        catch (Exception error) when (error is Win32Exception or IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, $"无法打开快捷方式「{Path.GetFileNameWithoutExtension(path)}」。",
+                "Windows Top Bar", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 

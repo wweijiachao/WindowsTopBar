@@ -64,6 +64,9 @@
                 <MenuItem Header="退出" Click="Exit_Click" />
             </ContextMenu>
         </Grid.ContextMenu>
+        <Button x:Name="ShortcutsButton" Style="{StaticResource StatusButton}" HorizontalAlignment="Left"
+                Width="76" Margin="8,0,0,0" Click="Shortcuts_Click"
+                Content="快速启动 ▾" AutomationProperties.Name="快速启动" />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,14,0">
             <Button x:Name="QQButton" Width="36" Style="{StaticResource StatusButton}" Click="QQ_Click"
                     Visibility="Collapsed" AutomationProperties.Name="打开 QQ" ToolTip="QQ"
