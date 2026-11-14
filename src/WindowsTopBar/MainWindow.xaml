@@ -12,6 +12,40 @@
         ShowActivated="False"
         Background="#F1EFEB"
         Foreground="#33353A">
+    <Window.Resources>
+        <Style x:Key="StatusButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Window}}" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="MinWidth" Value="33" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid Background="Transparent" Margin="0,3">
+                            <Border x:Name="Hover" Background="{TemplateBinding Foreground}" CornerRadius="4" Opacity="0" />
+                            <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Hover" Property="Opacity" Value="0.12" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Hover" Property="Opacity" Value="0.16" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="StatusGlyph" TargetType="Path">
+            <Setter Property="Stroke" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+            <Setter Property="StrokeThickness" Value="1.45" />
+            <Setter Property="StrokeStartLineCap" Value="Round" />
+            <Setter Property="StrokeEndLineCap" Value="Round" />
+            <Setter Property="StrokeLineJoin" Value="Round" />
+        </Style>
+    </Window.Resources>
     <Grid Background="Transparent">
         <Grid.ContextMenu>
             <ContextMenu>
@@ -26,12 +60,46 @@
                 <MenuItem Header="退出" Click="Exit_Click" />
             </ContextMenu>
         </Grid.ContextMenu>
-        <TextBlock x:Name="ClockText"
-                   Margin="0,0,14,0"
-                   HorizontalAlignment="Right"
-                   VerticalAlignment="Center"
-                   FontSize="13"
-                   FontWeight="SemiBold"
-                   AutomationProperties.Name="当前时间" />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,14,0">
+            <Button x:Name="InputButton" Style="{StaticResource StatusButton}" Click="InputLanguage_Click"
+                    AutomationProperties.Name="切换输入语言" ToolTip="切换输入语言">
+                <TextBlock x:Name="InputText" Text="—" />
+            </Button>
+            <Button x:Name="WifiButton" Style="{StaticResource StatusButton}" Click="QuickSettings_Click"
+                    AutomationProperties.Name="Wi-Fi，打开快速设置" ToolTip="Wi-Fi">
+                <Canvas Width="17" Height="16">
+                    <Path Style="{StaticResource StatusGlyph}"
+                          Data="M 1.5,5.5 Q 8.5,-0.5 15.5,5.5 M 3.8,8 Q 8.5,4 13.2,8 M 6,10.4 Q 8.5,8.3 11,10.4" />
+                    <Ellipse Width="2" Height="2" Canvas.Left="7.5" Canvas.Top="12.3"
+                             Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                    <Path x:Name="WifiDisconnected" Style="{StaticResource StatusGlyph}" Data="M 2,2 L 15,14" Visibility="Collapsed" />
+                </Canvas>
+            </Button>
+            <Button x:Name="VolumeButton" Style="{StaticResource StatusButton}" Click="QuickSettings_Click"
+                    AutomationProperties.Name="音量，打开快速设置" ToolTip="音量">
+                <Canvas Width="17" Height="16">
+                    <Path Style="{StaticResource StatusGlyph}" Data="M 1.5,6 L 4.4,6 8,3 8,13 4.4,10 1.5,10 Z" />
+                    <Path x:Name="VolumeWaves" Style="{StaticResource StatusGlyph}" Data="M 11,5 Q 14,8 11,11 M 13.3,2.8 Q 18.3,8 13.3,13.2" />
+                    <Path x:Name="VolumeMute" Style="{StaticResource StatusGlyph}" Data="M 11,6 L 15,10 M 15,6 L 11,10" Visibility="Collapsed" />
+                </Canvas>
+            </Button>
+            <Button x:Name="BatteryButton" Style="{StaticResource StatusButton}" Click="QuickSettings_Click"
+                    AutomationProperties.Name="电池，打开快速设置" ToolTip="电池">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock x:Name="BatteryText" Text="—" VerticalAlignment="Center" Margin="0,0,5,0" />
+                    <Canvas Width="23" Height="15">
+                        <Rectangle Width="19" Height="11" Canvas.Left="1" Canvas.Top="2" RadiusX="2.5" RadiusY="2.5"
+                                   StrokeThickness="1.4" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                        <Rectangle Width="1.7" Height="4.5" Canvas.Left="20.5" Canvas.Top="5.25" RadiusX="0.75" RadiusY="0.75"
+                                   Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                        <Rectangle x:Name="BatteryFill" Width="0" Height="6.5" Canvas.Left="3.25" Canvas.Top="4.25" RadiusX="1" RadiusY="1"
+                                   Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                        <Path x:Name="BatteryCharging" Style="{StaticResource StatusGlyph}" Data="M 12,3.5 L 8.3,8 11.7,8 9.3,11.4" Visibility="Collapsed" />
+                    </Canvas>
+                </StackPanel>
+            </Button>
+            <TextBlock x:Name="ClockText" VerticalAlignment="Center" Margin="10,0,0,0"
+                       FontSize="13" FontWeight="SemiBold" AutomationProperties.Name="当前时间" />
+        </StackPanel>
     </Grid>
 </Window>

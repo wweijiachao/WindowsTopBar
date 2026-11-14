@@ -12,6 +12,8 @@ public partial class MainWindow : Window
 {
     private const int WmTimeChange = 0x001E;
     private const int WmSettingChange = 0x001A;
+    private const int WmMouseActivate = 0x0021;
+    private const int MaNoActivate = 3;
     private const int WmThemeChanged = 0x031A;
     private const int WmDwmCompositionChanged = 0x031E;
     private const int WmPowerBroadcast = 0x0218;
@@ -25,6 +27,10 @@ public partial class MainWindow : Window
     private static readonly Color DarkText = Color.FromRgb(51, 53, 58);
 
     private readonly DispatcherTimer _clock = new();
+    private readonly DispatcherTimer _statusTimer = new(DispatcherPriority.Background)
+    {
+        Interval = TimeSpan.FromSeconds(2)
+    };
     private readonly DispatcherTimer _tintTimer = new(DispatcherPriority.Background)
     {
         Interval = TimeSpan.FromSeconds(1)
@@ -35,6 +41,8 @@ public partial class MainWindow : Window
     private GradientStop? _acrylicEdge;
     private Color _acrylicTint;
     private AppearanceSettings _settings;
+    private bool _statusRefreshPending;
+    private bool _closing;
 
     public MainWindow()
     {
@@ -43,6 +51,12 @@ public partial class MainWindow : Window
         UpdateThemeMenu();
         _clock.Tick += RefreshClock;
         _tintTimer.Tick += RefreshEdgeTint;
+        _statusTimer.Tick += RefreshStatus;
+        Loaded += (_, _) =>
+        {
+            _statusTimer.Start();
+            RefreshStatus(this, EventArgs.Empty);
+        };
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -70,6 +84,9 @@ public partial class MainWindow : Window
             return;
         }
 
+        _closing = true;
+        _statusTimer.Stop();
+        _statusTimer.Tick -= RefreshStatus;
         _clock.Stop();
         _clock.Tick -= RefreshClock;
         _tintTimer.Stop();
@@ -153,6 +170,13 @@ public partial class MainWindow : Window
 
     private nint OnWindowMessage(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
+        if (message == WmMouseActivate)
+        {
+            // System shortcuts should act while the previous application still has focus.
+            handled = true;
+            return MaNoActivate;
+        }
+
         if (message == WmTimeChange || (message == WmPowerBroadcast && wParam == PbtApmResumeAutomatic))
         {
             RefreshClock(this, EventArgs.Empty);
@@ -169,6 +193,58 @@ public partial class MainWindow : Window
 
         return 0;
     }
+
+    private async void RefreshStatus(object? sender, EventArgs e)
+    {
+        var input = SystemStatus.ReadInputLanguage();
+        InputText.Text = input.Label;
+        InputButton.ToolTip = $"{input.Name} · Win + Space";
+        if (_statusRefreshPending)
+        {
+            return;
+        }
+
+        _statusRefreshPending = true;
+        try
+        {
+            var (battery, wifi, audio) = await Task.Run(() =>
+                (SystemStatus.ReadBattery(), SystemStatus.ReadWifiConnected(), AudioStatus.Read()));
+            if (_closing)
+            {
+                return;
+            }
+
+            BatteryButton.Visibility = battery.HasBattery ? Visibility.Visible : Visibility.Collapsed;
+            BatteryText.Text = battery.Percentage is int percentage ? $"{percentage}%" : "—";
+            BatteryFill.Width = battery.Charging ? 0 : 14.5 * battery.Percentage.GetValueOrDefault() / 100;
+            BatteryCharging.Visibility = battery.Charging ? Visibility.Visible : Visibility.Collapsed;
+            BatteryButton.ToolTip = $"电池 {BatteryText.Text}{(battery.Charging ? " · 充电中" : "")}";
+
+            WifiDisconnected.Visibility = wifi == false ? Visibility.Visible : Visibility.Collapsed;
+            WifiButton.ToolTip = wifi switch
+            {
+                true => "Wi-Fi 已连接",
+                false => "Wi-Fi 未连接",
+                null => "Wi-Fi 状态不可用"
+            };
+
+            var silent = audio is { Muted: true } or { Percentage: 0 };
+            VolumeWaves.Visibility = !silent && audio.HasValue ? Visibility.Visible : Visibility.Collapsed;
+            VolumeMute.Visibility = silent ? Visibility.Visible : Visibility.Collapsed;
+            VolumeButton.ToolTip = audio is { } output
+                ? (output.Muted ? "已静音" : $"音量 {output.Percentage}%")
+                : "音量状态不可用";
+        }
+        finally
+        {
+            _statusRefreshPending = false;
+        }
+    }
+
+    private async void QuickSettings_Click(object sender, RoutedEventArgs e) =>
+        await Task.Run(SystemShortcuts.OpenQuickSettings);
+
+    private void InputLanguage_Click(object sender, RoutedEventArgs e) => SystemShortcuts.SwitchInputLanguage();
 
     private void RefreshClock(object? sender, EventArgs e)
     {
