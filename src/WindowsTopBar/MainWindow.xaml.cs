@@ -296,13 +296,18 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void QQ_Click(object sender, RoutedEventArgs e) => await OpenMessenger(Messenger.QQ);
+    private async void QQ_Click(object sender, RoutedEventArgs e) => await ToggleMessenger(Messenger.QQ);
 
-    private async void WeChat_Click(object sender, RoutedEventArgs e) => await OpenMessenger(Messenger.WeChat);
+    private async void WeChat_Click(object sender, RoutedEventArgs e) => await ToggleMessenger(Messenger.WeChat);
 
-    private async Task OpenMessenger(Messenger messenger)
+    private async Task ToggleMessenger(Messenger messenger)
     {
         if (_openingMessenger || _closing)
+        {
+            return;
+        }
+
+        if (_messengers.TryMinimizeToTray(messenger))
         {
             return;
         }

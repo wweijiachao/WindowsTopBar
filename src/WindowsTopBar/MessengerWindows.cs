@@ -8,9 +8,13 @@ internal enum Messenger { QQ, WeChat }
 internal sealed class MessengerWindows : IDisposable
 {
     private const int ShellFlash = 0x8006;
+    private const int ShellWindowActivated = 4;
+    private const int ShellRudeAppActivated = 0x8004;
+    private const uint WmClose = 0x0010;
     private static readonly string[] WeChatProcesses = ["Weixin", "WeChat"];
     private nint _window;
     private uint _message;
+    private nint _lastExternalForeground;
 
     public void Register(nint window)
     {
@@ -19,6 +23,11 @@ internal sealed class MessengerWindows : IDisposable
         {
             _window = window;
             _message = message;
+            var foreground = GetForegroundWindow();
+            if (foreground != window)
+            {
+                _lastExternalForeground = foreground;
+            }
         }
         else
         {
@@ -28,8 +37,22 @@ internal sealed class MessengerWindows : IDisposable
 
     public Messenger? ReadFlash(int message, nint kind, nint target)
     {
-        if (_message == 0 || message != _message || kind != ShellFlash ||
-            GetWindowThreadProcessId(target, out var pid) == 0)
+        if (_message == 0 || message != _message || target == 0)
+        {
+            return null;
+        }
+
+        if (kind is ShellWindowActivated or ShellRudeAppActivated)
+        {
+            if (target != _window)
+            {
+                _lastExternalForeground = target;
+            }
+
+            return null;
+        }
+
+        if (kind != ShellFlash || GetWindowThreadProcessId(target, out var pid) == 0)
         {
             return null;
         }
@@ -37,18 +60,50 @@ internal sealed class MessengerWindows : IDisposable
         try
         {
             using var process = Process.GetProcessById((int)pid);
-            var name = process.ProcessName;
-            if (name.Equals("QQ", StringComparison.OrdinalIgnoreCase))
-            {
-                return Messenger.QQ;
-            }
-
-            return WeChatProcesses.Contains(name, StringComparer.OrdinalIgnoreCase) ? Messenger.WeChat : null;
+            return GetMessenger(process.ProcessName);
         }
         catch (Exception error) when (error is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
             return null;
         }
+    }
+
+    public bool TryMinimizeToTray(Messenger messenger)
+    {
+        var foreground = GetForegroundWindow();
+        // A WPF click can give the top bar focus before its Click handler runs.
+        var target = foreground == 0 || foreground == _window ? _lastExternalForeground : foreground;
+        if (target == 0 || !IsWindowVisible(target) || IsIconic(target) ||
+            GetWindowThreadProcessId(target, out var pid) == 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var process = Process.GetProcessById((int)pid);
+            if (GetMessenger(process.ProcessName) != messenger || process.MainWindowHandle != target)
+            {
+                return false;
+            }
+
+            // Use the client's own close-to-tray behavior so the native tray icon can restore it.
+            return PostMessageW(target, WmClose, 0, 0);
+        }
+        catch (Exception error) when (error is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return false;
+        }
+    }
+
+    private static Messenger? GetMessenger(string name)
+    {
+        if (name.Equals("QQ", StringComparison.OrdinalIgnoreCase))
+        {
+            return Messenger.QQ;
+        }
+
+        return WeChatProcesses.Contains(name, StringComparer.OrdinalIgnoreCase) ? Messenger.WeChat : null;
     }
 
     public static (bool QQ, bool WeChat) ReadRunning() =>
@@ -125,6 +180,7 @@ internal sealed class MessengerWindows : IDisposable
             DeregisterShellHookWindow(_window);
             _window = 0;
             _message = 0;
+            _lastExternalForeground = 0;
         }
     }
 
@@ -139,6 +195,12 @@ internal sealed class MessengerWindows : IDisposable
 
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern uint GetWindowThreadProcessId(nint window, out uint processId);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool PostMessageW(nint window, uint message, nuint wParam, nint lParam);
 
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern bool IsIconic(nint window);
