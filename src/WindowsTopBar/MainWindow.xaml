@@ -15,6 +15,14 @@
     <Grid Background="Transparent">
         <Grid.ContextMenu>
             <ContextMenu>
+                <MenuItem Header="主题">
+                    <MenuItem x:Name="DarkThemeItem" Header="深色" IsCheckable="True" Click="Theme_Click" />
+                    <MenuItem x:Name="LightThemeItem" Header="浅色" IsCheckable="True" Click="Theme_Click" />
+                    <MenuItem x:Name="SystemThemeItem" Header="跟随主题" IsCheckable="True" IsChecked="True" Click="Theme_Click" />
+                    <Separator />
+                    <MenuItem x:Name="AcrylicItem" Header="亚克力效果" IsCheckable="True" IsChecked="True" Click="Acrylic_Click" />
+                </MenuItem>
+                <Separator />
                 <MenuItem Header="退出" Click="Exit_Click" />
             </ContextMenu>
         </Grid.ContextMenu>

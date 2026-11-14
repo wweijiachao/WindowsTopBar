@@ -26,7 +26,7 @@
 ## 事件监听与 UI 更新
 
 - **时钟**由窗口持有一个 `DispatcherTimer`，启动时立即读取本地时间，每次刷新后按下一个分钟边界安排更新，关闭时停止并解除订阅。每次刷新读取实际时间，以便休眠恢复后重新同步。[WPF DispatcherTimer](https://learn.microsoft.com/en-us/dotnet/api/system.windows.threading.dispatchertimer?view=windowsdesktop-10.0)
-- **颜色适配**由系统颜色模式决定底色与文字配色。窗口收到系统设置变化消息时重新应用配色。启用 DWM 亚克力时，每秒读取栏下窄带的平均色，仅轻微调整栏底渐变。关闭透明效果、使用高对比度或无法启用亚克力时使用实色。[Windows 颜色设置](https://learn.microsoft.com/en-us/windows/apps/develop/settings/settings-common#personalization---colors) · [DWM 桌面亚克力](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type)
+- **颜色适配**由右键菜单的主题选项决定，默认跟随系统颜色模式。窗口收到系统设置变化消息时重新应用配色。应用开启亚克力效果时继续轻微染色，DWM 材质可用时同时启用原生亚克力。应用关闭效果时使用实色，高对比度模式使用系统颜色。[Windows 颜色设置](https://learn.microsoft.com/en-us/windows/apps/develop/settings/settings-common#personalization---colors) · [DWM 桌面亚克力](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type)
 - **消息提醒**先在 Windows 11 上分别验证目标微信和 QQ 版本能否产生可获取的系统通知。若采用 `UserNotificationListener`，需在实际 WPF 发布方式下验证包清单能力、用户授权，以及其他应用有焦点时能否收到 `NotificationChanged`。验证通过后，由监听器在 UI 线程请求授权，在常驻进程内处理通知增减，并仅向 UI 提供每个客户端是否存在可观察通知的状态。授权被撤销或来源不可用时清除对应圆点，其他顶栏功能继续运行。[Windows 通知监听与授权](https://learn.microsoft.com/en-us/windows/apps/develop/notifications/app-notifications/notification-listener)
 
 系统模块负责检查 API 的返回值、释放各自的订阅和句柄。窗口关闭时先停止接收更新，再释放这些模块。需要修改 WPF 控件的更新统一回到窗口的 `Dispatcher`，已经排队的更新在关闭开始后直接丢弃。

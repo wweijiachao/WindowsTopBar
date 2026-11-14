@@ -34,6 +34,9 @@ public partial class MainWindow : Window
     private DispatcherOperation? _pendingAppearance;
     private GradientStop? _acrylicEdge;
     private Color _acrylicTint;
+    private TopBarTheme _theme;
+
+    private enum TopBarTheme { System, Dark, Light }
 
     public MainWindow()
     {
@@ -78,25 +81,27 @@ public partial class MainWindow : Window
 
     private void RefreshAppearance()
     {
-        var dark = Registry.GetValue(PersonalizeKey, "SystemUsesLightTheme", 1) is 0;
-        var transparency = Registry.GetValue(PersonalizeKey, "EnableTransparency", 1) is not 0;
-        ApplyAppearance(dark, transparency, SystemParameters.HighContrast);
+        var dark = _theme == TopBarTheme.Dark ||
+            (_theme == TopBarTheme.System && Registry.GetValue(PersonalizeKey, "SystemUsesLightTheme", 1) is 0);
+        ApplyAppearance(dark, AcrylicItem.IsChecked, SystemParameters.HighContrast);
     }
 
-    private void ApplyAppearance(bool dark, bool transparency, bool highContrast)
+    private void ApplyAppearance(bool dark, bool acrylicEnabled, bool highContrast)
     {
         if (_source is null)
         {
             return;
         }
 
-        var acrylic = WindowBackdrop.Apply(_source, transparency && !highContrast, dark);
+        var useTint = acrylicEnabled && !highContrast;
+        var nativeAcrylic = WindowBackdrop.Apply(_source, useTint, dark);
         var background = dark ? DarkBackground : LightBackground;
         Foreground = highContrast ? SystemColors.WindowTextBrush : FrozenBrush(dark ? LightText : DarkText);
 
-        if (acrylic)
+        if (useTint)
         {
-            background.A = AcrylicTintOpacity;
+            // Keep the local tint active when Windows uses a solid backdrop.
+            background.A = nativeAcrylic ? AcrylicTintOpacity : (byte)255;
             _acrylicTint = background;
             _acrylicEdge = new GradientStop(background, 1);
             var tint = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
@@ -175,4 +180,17 @@ public partial class MainWindow : Window
     }
 
     private void Exit_Click(object sender, RoutedEventArgs e) => Close();
+
+    private void Theme_Click(object sender, RoutedEventArgs e)
+    {
+        _theme = sender == DarkThemeItem ? TopBarTheme.Dark
+            : sender == LightThemeItem ? TopBarTheme.Light
+            : TopBarTheme.System;
+        DarkThemeItem.IsChecked = _theme == TopBarTheme.Dark;
+        LightThemeItem.IsChecked = _theme == TopBarTheme.Light;
+        SystemThemeItem.IsChecked = _theme == TopBarTheme.System;
+        RefreshAppearance();
+    }
+
+    private void Acrylic_Click(object sender, RoutedEventArgs e) => RefreshAppearance();
 }
