@@ -22,10 +22,14 @@ internal sealed class AppBar : IDisposable
     private const int WmDisplayChange = 0x007E;
     private const int WmDpiChanged = 0x02E0;
     private const uint MonitorDefaultToPrimary = 1;
+    private const int GwlExStyle = -20;
+    private const int WsExToolWindow = 0x00000080;
+    private const int WsExAppWindow = 0x00040000;
     private const uint SwpNoSize = 0x0001;
     private const uint SwpNoMove = 0x0002;
     private const uint SwpNoZOrder = 0x0004;
     private const uint SwpNoActivate = 0x0010;
+    private const uint SwpFrameChanged = 0x0020;
     private static readonly nint HwndTopmost = -1;
     private static readonly nint HwndNotTopmost = -2;
     private static readonly nint HwndBottom = 1;
@@ -48,6 +52,7 @@ internal sealed class AppBar : IDisposable
 
     public void Start()
     {
+        ApplyToolWindowStyle();
         _source.AddHook(OnWindowMessage);
         _callbackMessage = RegisterWindowMessageW("WindowsTopBar.AppBar");
         var data = CreateData();
@@ -62,6 +67,23 @@ internal sealed class AppBar : IDisposable
         if (_registered)
         {
             SetZOrder(HwndTopmost);
+        }
+    }
+
+    private void ApplyToolWindowStyle()
+    {
+        var style = GetWindowLongW(_handle, GwlExStyle);
+        if (style == 0 && Marshal.GetLastPInvokeError() != 0)
+        {
+            Trace.TraceWarning("Could not read the top bar window style.");
+            return;
+        }
+
+        var toolStyle = (style | WsExToolWindow) & ~WsExAppWindow;
+        if ((SetWindowLongW(_handle, GwlExStyle, toolStyle) == 0 && Marshal.GetLastPInvokeError() != 0) ||
+            !SetWindowPos(_handle, 0, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoZOrder | SwpNoActivate | SwpFrameChanged))
+        {
+            Trace.TraceWarning("Could not apply the top bar tool window style.");
         }
     }
 
@@ -267,6 +289,12 @@ internal sealed class AppBar : IDisposable
     [DllImport("user32.dll", ExactSpelling = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetWindowRect(nint hwnd, out Rect rect);
+
+    [DllImport("user32.dll", ExactSpelling = true, SetLastError = true)]
+    private static extern int GetWindowLongW(nint hwnd, int index);
+
+    [DllImport("user32.dll", ExactSpelling = true, SetLastError = true)]
+    private static extern int SetWindowLongW(nint hwnd, int index, int value);
 
     [DllImport("user32.dll", ExactSpelling = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
