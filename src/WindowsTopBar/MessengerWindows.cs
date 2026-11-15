@@ -10,37 +10,58 @@ internal sealed class MessengerWindows : IDisposable
     private const int ShellFlash = 0x8006;
     private const int ShellWindowActivated = 4;
     private const int ShellRudeAppActivated = 0x8004;
+    private const uint EventSystemForeground = 0x0003;
+    private const uint WinEventOutOfContext = 0;
+    private const uint WinEventSkipOwnProcess = 2;
+    private const int GwlExStyle = -20;
+    private const int WsExToolWindow = 0x00000080;
+    private const int WsExNoActivate = 0x08000000;
     private const uint WmClose = 0x0010;
     private static readonly string[] QqProcesses = ["QQ"];
     private static readonly string[] WeChatProcesses = ["Weixin", "WeChat"];
     private nint _window;
     private uint _message;
     private nint _lastExternalForeground;
+    private readonly WinEventProc _foregroundCallback;
+    private nint _foregroundHook;
+
+    public MessengerWindows() => _foregroundCallback = OnForegroundChanged;
+
+    public event Action<nint>? ForegroundWindowChanged;
 
     public void Register(nint window)
     {
+        _window = window;
+        var foreground = GetForegroundWindow();
+        if (foreground != window)
+        {
+            _lastExternalForeground = foreground;
+        }
+
         var message = RegisterWindowMessageW("SHELLHOOK");
         if (message != 0 && RegisterShellHookWindow(window))
         {
-            _window = window;
             _message = message;
-            var foreground = GetForegroundWindow();
-            if (foreground != window)
-            {
-                _lastExternalForeground = foreground;
-            }
         }
         else
         {
             Trace.TraceWarning("Could not register for messenger attention events.");
         }
+
+        // Out-of-context callbacks are delivered on the UI thread that registers the hook.
+        _foregroundHook = SetWinEventHook(EventSystemForeground, EventSystemForeground, 0,
+            _foregroundCallback, 0, 0, WinEventOutOfContext | WinEventSkipOwnProcess);
+        if (_foregroundHook == 0)
+        {
+            Trace.TraceWarning("Could not register for foreground-window events.");
+        }
     }
 
-    public (Messenger? Flash, Messenger? Activated) ReadShellEvent(int message, nint kind, nint target, bool watchActivation)
+    public Messenger? ReadFlash(int message, nint kind, nint target)
     {
         if (_message == 0 || message != _message || target == 0)
         {
-            return default;
+            return null;
         }
 
         if (kind is ShellWindowActivated or ShellRudeAppActivated)
@@ -48,17 +69,43 @@ internal sealed class MessengerWindows : IDisposable
             if (target != _window)
             {
                 _lastExternalForeground = target;
+                // Keep the shell notification as a backup when it agrees with the foreground.
+                if (target == GetForegroundWindow())
+                {
+                    ForegroundWindowChanged?.Invoke(target);
+                }
             }
-
-            return (null, watchActivation && target == GetForegroundWindow()
-                ? ReadMessenger(target, requireMainWindow: true)
-                : null);
         }
 
-        return (kind == ShellFlash ? ReadMessenger(target, requireMainWindow: false) : null, null);
+        return kind == ShellFlash ? ReadMessenger(target, requireMainWindow: false) : null;
     }
 
-    public static Messenger? ReadForegroundMessenger() => ReadMessenger(GetForegroundWindow(), requireMainWindow: true);
+    private void OnForegroundChanged(nint hook, uint eventType, nint window, int objectId, int childId, uint eventThread, uint eventTime)
+    {
+        if (hook == _foregroundHook && window != 0)
+        {
+            ForegroundWindowChanged?.Invoke(window);
+        }
+    }
+
+    public static Messenger? ReadForegroundMessenger() => ReadAttentionWindow(GetForegroundWindow());
+
+    public static Messenger? ReadAttentionWindow(nint window)
+    {
+        if (window == 0 || !IsWindowVisible(window) || IsIconic(window))
+        {
+            return null;
+        }
+
+        // The active client window can differ from Process.MainWindowHandle.
+        var style = GetWindowLongW(window, GwlExStyle);
+        if ((style == 0 && Marshal.GetLastPInvokeError() != 0) || (style & (WsExToolWindow | WsExNoActivate)) != 0)
+        {
+            return null;
+        }
+
+        return ReadMessenger(window, requireMainWindow: false);
+    }
 
     private static Messenger? ReadMessenger(nint target, bool requireMainWindow)
     {
@@ -190,14 +237,37 @@ internal sealed class MessengerWindows : IDisposable
 
     public void Dispose()
     {
-        if (_window != 0)
+        if (_foregroundHook != 0)
         {
-            DeregisterShellHookWindow(_window);
-            _window = 0;
-            _message = 0;
-            _lastExternalForeground = 0;
+            if (!UnhookWinEvent(_foregroundHook))
+            {
+                Trace.TraceWarning("Could not remove the foreground-window hook.");
+            }
+            _foregroundHook = 0;
         }
+
+        if (_message != 0 && !DeregisterShellHookWindow(_window))
+        {
+            Trace.TraceWarning("Could not remove the messenger shell hook.");
+        }
+        _window = 0;
+        _message = 0;
+        _lastExternalForeground = 0;
     }
+
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate void WinEventProc(nint hook, uint eventType, nint window, int objectId, int childId,
+        uint eventThread, uint eventTime);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern nint SetWinEventHook(uint eventMin, uint eventMax, nint module, WinEventProc callback,
+        uint processId, uint threadId, uint flags);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool UnhookWinEvent(nint hook);
+
+    [DllImport("user32.dll", ExactSpelling = true, SetLastError = true)]
+    private static extern int GetWindowLongW(nint window, int index);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     private static extern uint RegisterWindowMessageW(string name);

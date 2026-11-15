@@ -93,6 +93,7 @@ public partial class MainWindow : Window
         }
 
         _source.AddHook(OnWindowMessage);
+        _messengers.ForegroundWindowChanged += OnMessengerForegroundChanged;
         _messengers.Register(_source.Handle);
         _appBar = new AppBar(_source, Height);
         _appBar.Start();
@@ -126,6 +127,7 @@ public partial class MainWindow : Window
         _tintTimer.Stop();
         _tintTimer.Tick -= RefreshEdgeTint;
         _pendingAppearance?.Abort();
+        _messengers.ForegroundWindowChanged -= OnMessengerForegroundChanged;
         _messengers.Dispose();
         _appBar?.Dispose();
         _source?.RemoveHook(OnWindowMessage);
@@ -205,18 +207,9 @@ public partial class MainWindow : Window
 
     private nint OnWindowMessage(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
-        if (!_closing)
+        if (!_closing && _messengers.ReadFlash(message, wParam, lParam) is { } messenger)
         {
-            var watchActivation = QQGlyph.HasAnimatedProperties || WeChatGlyph.HasAnimatedProperties;
-            var (flash, activated) = _messengers.ReadShellEvent(message, wParam, lParam, watchActivation);
-            if (flash is { } messenger)
-            {
-                FlashMessenger(messenger);
-            }
-            if (activated is { } foreground)
-            {
-                StopMessengerFlash(foreground);
-            }
+            FlashMessenger(messenger);
         }
 
         if (message == WmMouseActivate)
@@ -272,6 +265,11 @@ public partial class MainWindow : Window
                 UpdateMessengerVisibility(Messenger.WeChat, messengers.WeChat);
             }
             UpdateMessengerSeparator();
+            // A window can still be restoring when its foreground event arrives.
+            if (HasMessengerFlash && MessengerWindows.ReadForegroundMessenger() is { } foreground)
+            {
+                StopMessengerFlash(foreground);
+            }
 
             BatteryIndicator.Visibility = battery.HasBattery ? Visibility.Visible : Visibility.Collapsed;
             BatteryText.Text = battery.Percentage is int percentage ? $"{percentage}%" : "—";
@@ -317,6 +315,16 @@ public partial class MainWindow : Window
 
     private void StopMessengerFlash(Messenger messenger) =>
         (messenger == Messenger.QQ ? QQGlyph : WeChatGlyph).BeginAnimation(OpacityProperty, null);
+
+    private bool HasMessengerFlash => QQGlyph.HasAnimatedProperties || WeChatGlyph.HasAnimatedProperties;
+
+    private void OnMessengerForegroundChanged(nint window)
+    {
+        if (!_closing && HasMessengerFlash && MessengerWindows.ReadAttentionWindow(window) is { } messenger)
+        {
+            StopMessengerFlash(messenger);
+        }
+    }
 
     private void FlashMessenger(Messenger messenger)
     {
