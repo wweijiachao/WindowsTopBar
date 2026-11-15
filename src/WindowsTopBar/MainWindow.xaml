@@ -67,6 +67,7 @@
         </Border>
         <Button x:Name="ShortcutsButton" Style="{StaticResource StatusButton}" HorizontalAlignment="Left"
                 Width="76" Margin="8,0,0,0" Click="Shortcuts_Click"
+                PreviewMouseLeftButtonDown="Shortcuts_PreviewMouseLeftButtonDown"
                 Content="快速启动 ▾" AutomationProperties.Name="快速启动">
             <Button.ContextMenu>
                 <ContextMenu>

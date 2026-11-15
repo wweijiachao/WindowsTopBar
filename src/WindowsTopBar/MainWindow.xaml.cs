@@ -60,6 +60,8 @@ public partial class MainWindow : Window
     private readonly CancellationTokenSource _windowLifetime = new();
     private bool _openingQuickSettings;
     private bool _openingMessenger;
+    private ContextMenu? _shortcutsMenu;
+    private int? _shortcutsDismissPress;
 
     public MainWindow()
     {
@@ -106,6 +108,11 @@ public partial class MainWindow : Window
         }
 
         _closing = true;
+        if (_shortcutsMenu is { IsOpen: true } menu)
+        {
+            menu.IsOpen = false;
+        }
+
         _windowLifetime.Cancel();
         _windowLifetime.Dispose();
         _statusTimer.Stop();
@@ -304,9 +311,36 @@ public partial class MainWindow : Window
     private void BarBackground_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) =>
         _appBar?.ActivateWindowBelow((int)PointToScreen(e.GetPosition(this)).X);
 
+    private void Shortcuts_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_shortcutsDismissPress == e.Timestamp)
+        {
+            e.Handled = true;
+        }
+
+        _shortcutsDismissPress = null;
+    }
+
+    private void ShortcutsMenu_PreviewMouseDownOutside(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Left)
+        {
+            // WPF forwards the press that dismissed the menu to the underlying button.
+            _shortcutsDismissPress = e.Timestamp;
+        }
+    }
+
     private void Shortcuts_Click(object sender, RoutedEventArgs e)
     {
+        if (_shortcutsMenu is { IsOpen: true } openMenu)
+        {
+            openMenu.IsOpen = false;
+            return;
+        }
+
         var menu = new ContextMenu { PlacementTarget = ShortcutsButton, Placement = PlacementMode.Bottom };
+        menu.AddHandler(Mouse.PreviewMouseDownOutsideCapturedElementEvent,
+            new MouseButtonEventHandler(ShortcutsMenu_PreviewMouseDownOutside), handledEventsToo: true);
         try
         {
             foreach (var path in ShortcutDirectory.List(ShortcutDirectory.GetConfiguredFolder()))
@@ -345,6 +379,7 @@ public partial class MainWindow : Window
             menu.Items.Add(new MenuItem { Header = "无法读取快捷方式目录", IsEnabled = false });
         }
 
+        _shortcutsMenu = menu;
         menu.IsOpen = true;
     }
 
