@@ -14,7 +14,7 @@
 - 每次修改主题或亚克力开关都会立即保存到 `%LOCALAPPDATA%\WindowsTopBar\settings.json`，下次启动自动读取。配置文件缺失或无法读取时使用默认设置。
 - 输入法状态每 300 毫秒刷新，以顶栏字体显示「中」或「英」。读取失败时保留上次成功识别的状态，首次读到状态前留空。
 - Wi-Fi、音量和电池每 2 秒刷新，共用一个按钮，悬停时分别显示状态。点击打开 Windows 快速设置，并在可识别系统面板时将它对齐到顶栏右下方。电池旁显示百分比，无电池的设备会隐藏该项。
-- QQ 和微信运行时显示在状态区左侧。点击图标可唤出客户端，主窗口已在前台时再点会按客户端的关闭行为退回托盘。收到 Windows 任务栏闪动事件时，对应图标会闪动。
+- QQ 和微信运行时显示在状态区左侧。点击图标可唤出客户端，主窗口已在前台时再点会按客户端的关闭行为退回托盘。收到 Windows 任务栏闪动事件后，对应图标会持续闪动，直到点击该图标并成功唤出主窗口。
 - 通过「打开配置文件目录」可编辑 `settings.json` 中的 `QqOpenShortcut` 和 `WeChatOpenShortcut`。默认分别为 `Ctrl+Alt+X` 和 `Ctrl+Alt+W`。可填写 `Ctrl+Shift+X` 或 `Alt+F8` 等组合，值需和各客户端的唤起快捷键一致。保存后下次从托盘唤起时生效，格式无效的组合会被跳过。
 - 后续考虑加入系统状态显示和快捷控制。
 
@@ -33,6 +33,7 @@ Release 构建后可运行以下回归检查。
 
 ```powershell
 dotnet run --file tests/SettingsChecks.cs -- src/WindowsTopBar/bin/Release/net10.0-windows/WindowsTopBar.dll
+dotnet run --file tests/MessengerAttentionChecks.cs -- src/WindowsTopBar/bin/Release/net10.0-windows/WindowsTopBar.dll
 dotnet run --file tests/WindowSelectionChecks.cs -- src/WindowsTopBar/bin/Release/net10.0-windows/WindowsTopBar.dll
 ```
 

@@ -18,6 +18,7 @@
 
 - 修改代码后在 Windows 上运行 `dotnet build WindowsTopBar.slnx -c Release`。涉及界面或生命周期时，手动验证启动、显示和正常退出。
 - 如果构建或替换时 `WindowsTopBar.exe` 被占用，可直接强制关闭占用该文件的 WindowsTopBar 进程。
+- 每次构建成功后，直接启动本次生成的 `WindowsTopBar.exe`。
 - 为关键可独立验证的逻辑和回归问题补充自动化测试。有测试项目后运行 `dotnet test WindowsTopBar.slnx -c Release`。涉及 Win32 集成时，手动覆盖相关场景和失败路径。
 
 ## 安全边界

@@ -36,11 +36,11 @@ internal sealed class MessengerWindows : IDisposable
         }
     }
 
-    public Messenger? ReadFlash(int message, nint kind, nint target)
+    public (Messenger? Flash, Messenger? Activated) ReadShellEvent(int message, nint kind, nint target, bool watchActivation)
     {
         if (_message == 0 || message != _message || target == 0)
         {
-            return null;
+            return default;
         }
 
         if (kind is ShellWindowActivated or ShellRudeAppActivated)
@@ -50,10 +50,20 @@ internal sealed class MessengerWindows : IDisposable
                 _lastExternalForeground = target;
             }
 
-            return null;
+            return (null, watchActivation && target == GetForegroundWindow()
+                ? ReadMessenger(target, requireMainWindow: true)
+                : null);
         }
 
-        if (kind != ShellFlash || GetWindowThreadProcessId(target, out var pid) == 0)
+        return (kind == ShellFlash ? ReadMessenger(target, requireMainWindow: false) : null, null);
+    }
+
+    public static Messenger? ReadForegroundMessenger() => ReadMessenger(GetForegroundWindow(), requireMainWindow: true);
+
+    private static Messenger? ReadMessenger(nint target, bool requireMainWindow)
+    {
+        if (target == 0 || GetWindowThreadProcessId(target, out var pid) == 0 ||
+            (requireMainWindow && (!IsWindowVisible(target) || IsIconic(target))))
         {
             return null;
         }
@@ -61,7 +71,8 @@ internal sealed class MessengerWindows : IDisposable
         try
         {
             using var process = Process.GetProcessById((int)pid);
-            return GetMessenger(process.ProcessName);
+            var messenger = GetMessenger(process.ProcessName);
+            return messenger.HasValue && (!requireMainWindow || process.MainWindowHandle == target) ? messenger : null;
         }
         catch (Exception error) when (error is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
@@ -74,27 +85,13 @@ internal sealed class MessengerWindows : IDisposable
         var foreground = GetForegroundWindow();
         // A WPF click can give the top bar focus before its Click handler runs.
         var target = foreground == 0 || foreground == _window ? _lastExternalForeground : foreground;
-        if (target == 0 || !IsWindowVisible(target) || IsIconic(target) ||
-            GetWindowThreadProcessId(target, out var pid) == 0)
+        if (ReadMessenger(target, requireMainWindow: true) != messenger)
         {
             return false;
         }
 
-        try
-        {
-            using var process = Process.GetProcessById((int)pid);
-            if (GetMessenger(process.ProcessName) != messenger || process.MainWindowHandle != target)
-            {
-                return false;
-            }
-
-            // Use the client's own close-to-tray behavior so the native tray icon can restore it.
-            return PostMessageW(target, WmClose, 0, 0);
-        }
-        catch (Exception error) when (error is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
-        {
-            return false;
-        }
+        // Use the client's own close-to-tray behavior so the native tray icon can restore it.
+        return PostMessageW(target, WmClose, 0, 0);
     }
 
     private static Messenger? GetMessenger(string name)

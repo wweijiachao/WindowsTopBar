@@ -26,6 +26,7 @@ public partial class MainWindow : Window
     private const int PbtApmResumeAutomatic = 0x0012;
     private const byte AcrylicTintOpacity = 180;
     private const double EdgeTintStrength = 0.12;
+    private const int MessengerActivationTimeoutMs = 5000;
     private const string PersonalizeKey = @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
     private static readonly Color LightBackground = Color.FromRgb(241, 239, 235);
     private static readonly Color DarkBackground = Color.FromRgb(38, 39, 41);
@@ -34,8 +35,10 @@ public partial class MainWindow : Window
 
     private readonly DispatcherTimer _clock = new();
     private readonly MessengerWindows _messengers = new();
-    private long _lastQqFlash;
-    private long _lastWeChatFlash;
+    private long _qqFlashVersion;
+    private long _weChatFlashVersion;
+    private long _qqActivationDeadline;
+    private long _weChatActivationDeadline;
     private readonly DispatcherTimer _inputTimer = new(DispatcherPriority.Background)
     {
         Interval = TimeSpan.FromMilliseconds(300)
@@ -108,6 +111,8 @@ public partial class MainWindow : Window
         }
 
         _closing = true;
+        QQGlyph.BeginAnimation(OpacityProperty, null);
+        WeChatGlyph.BeginAnimation(OpacityProperty, null);
         if (_shortcutsMenu is { IsOpen: true } menu)
         {
             menu.IsOpen = false;
@@ -203,9 +208,19 @@ public partial class MainWindow : Window
 
     private nint OnWindowMessage(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
-        if (!_closing && _messengers.ReadFlash(message, wParam, lParam) is { } messenger)
+        if (!_closing)
         {
-            FlashMessenger(messenger);
+            var now = Environment.TickCount64;
+            var watchActivation = _qqActivationDeadline > now || _weChatActivationDeadline > now;
+            var (flash, activated) = _messengers.ReadShellEvent(message, wParam, lParam, watchActivation);
+            if (flash is { } messenger)
+            {
+                FlashMessenger(messenger);
+            }
+            if (activated is { } foreground)
+            {
+                ConfirmMessengerActivation(foreground);
+            }
         }
 
         if (message == WmMouseActivate)
@@ -242,6 +257,8 @@ public partial class MainWindow : Window
         _statusRefreshPending = true;
         try
         {
+            var qqFlashAtStart = _qqFlashVersion;
+            var weChatFlashAtStart = _weChatFlashVersion;
             var (battery, wifi, audio, messengers) = await Task.Run(() =>
                 (SystemStatus.ReadBattery(), SystemStatus.ReadWifi(), AudioStatus.Read(), MessengerWindows.ReadRunning()));
             if (_closing)
@@ -249,8 +266,15 @@ public partial class MainWindow : Window
                 return;
             }
 
-            QQButton.Visibility = messengers.QQ ? Visibility.Visible : Visibility.Collapsed;
-            WeChatButton.Visibility = messengers.WeChat ? Visibility.Visible : Visibility.Collapsed;
+            // A new flash can arrive while the visibility snapshot is being read.
+            if (_qqFlashVersion == qqFlashAtStart)
+            {
+                UpdateMessengerVisibility(Messenger.QQ, messengers.QQ);
+            }
+            if (_weChatFlashVersion == weChatFlashAtStart)
+            {
+                UpdateMessengerVisibility(Messenger.WeChat, messengers.WeChat);
+            }
             UpdateMessengerSeparator();
 
             BatteryIndicator.Visibility = battery.HasBattery ? Visibility.Visible : Visibility.Collapsed;
@@ -284,6 +308,31 @@ public partial class MainWindow : Window
         MessengerSeparator.Visibility = QQButton.Visibility == Visibility.Visible || WeChatButton.Visibility == Visibility.Visible
             ? Visibility.Visible : Visibility.Collapsed;
 
+    private void UpdateMessengerVisibility(Messenger messenger, bool running)
+    {
+        var isQq = messenger == Messenger.QQ;
+        var button = isQq ? QQButton : WeChatButton;
+        button.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
+        if (!running)
+        {
+            ActivationDeadline(messenger) = 0;
+            (isQq ? QQGlyph : WeChatGlyph).BeginAnimation(OpacityProperty, null);
+        }
+    }
+
+    private ref long ActivationDeadline(Messenger messenger) =>
+        ref (messenger == Messenger.QQ ? ref _qqActivationDeadline : ref _weChatActivationDeadline);
+
+    private void ConfirmMessengerActivation(Messenger messenger)
+    {
+        ref var deadline = ref ActivationDeadline(messenger);
+        if (deadline > Environment.TickCount64)
+        {
+            deadline = 0;
+            (messenger == Messenger.QQ ? QQGlyph : WeChatGlyph).BeginAnimation(OpacityProperty, null);
+        }
+    }
+
     private void FlashMessenger(Messenger messenger)
     {
         var isQq = messenger == Messenger.QQ;
@@ -292,18 +341,15 @@ public partial class MainWindow : Window
         button.Visibility = Visibility.Visible;
         UpdateMessengerSeparator();
 
-        ref var lastFlash = ref (isQq ? ref _lastQqFlash : ref _lastWeChatFlash);
-        var now = Environment.TickCount64;
-        var repeated = lastFlash != 0 && now - lastFlash < 1200;
-        lastFlash = now;
-        if (!repeated)
+        ref var flashVersion = ref (isQq ? ref _qqFlashVersion : ref _weChatFlashVersion);
+        flashVersion++;
+        if (!glyph.HasAnimatedProperties)
         {
             glyph.BeginAnimation(OpacityProperty,
                 new DoubleAnimation(1, 0.18, TimeSpan.FromMilliseconds(300))
                 {
                     AutoReverse = true,
-                    RepeatBehavior = new RepeatBehavior(4),
-                    FillBehavior = FillBehavior.Stop
+                    RepeatBehavior = RepeatBehavior.Forever
                 });
         }
     }
@@ -428,6 +474,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        ActivationDeadline(messenger) = 0;
         if (_messengers.TryMinimizeToTray(messenger))
         {
             return;
@@ -436,8 +483,14 @@ public partial class MainWindow : Window
         _openingMessenger = true;
         try
         {
+            ActivationDeadline(messenger) = Environment.TickCount64 + MessengerActivationTimeoutMs;
             var token = _windowLifetime.Token;
             await Task.Run(() => MessengerWindows.Activate(messenger, token));
+            if (!_closing && ActivationDeadline(messenger) > Environment.TickCount64 &&
+                MessengerWindows.ReadForegroundMessenger() == messenger)
+            {
+                ConfirmMessengerActivation(messenger);
+            }
         }
         finally
         {
