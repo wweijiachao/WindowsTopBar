@@ -74,7 +74,7 @@
                 </ContextMenu>
             </Button.ContextMenu>
         </Button>
-        <Border HorizontalAlignment="Right" Background="Transparent" Padding="0,0,14,0">
+        <Border HorizontalAlignment="Right" Background="Transparent">
             <StackPanel Orientation="Horizontal">
                 <Button x:Name="QQButton" Width="36" Style="{StaticResource StatusButton}" Click="QQ_Click"
                         Visibility="Collapsed" AutomationProperties.Name="打开 QQ" ToolTip="QQ"
@@ -128,8 +128,12 @@
                         </StackPanel>
                     </StackPanel>
                 </Button>
-                <TextBlock x:Name="ClockText" VerticalAlignment="Center" Margin="10,0,0,0"
-                           FontSize="13" FontWeight="SemiBold" AutomationProperties.Name="当前时间" />
+                <Border x:Name="ClockArea" Background="Transparent" Padding="10,0,14,0"
+                        Style="{StaticResource StatusTooltipTiming}"
+                        ToolTipService.Placement="Bottom" ToolTipService.HasDropShadow="False">
+                    <TextBlock x:Name="ClockText" VerticalAlignment="Center" FontSize="13"
+                               FontWeight="SemiBold" AutomationProperties.Name="当前时间" />
+                </Border>
             </StackPanel>
         </Border>
     </Grid>

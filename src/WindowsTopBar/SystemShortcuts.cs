@@ -2,13 +2,24 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Automation;
+using System.Windows.Input;
 
 namespace WindowsTopBar;
 
 internal static class SystemShortcuts
 {
     private const ushort LeftWindows = 0x5B;
+    private const ushort RightWindows = 0x5C;
+    private const uint ExtendedKey = 1;
     private const uint KeyUp = 2;
+    private const uint MapVkToVscEx = 4;
+    private static readonly (ModifierKeys Modifier, ushort VirtualKey)[] ShortcutModifiers =
+    [
+        (ModifierKeys.Control, 0x11),
+        (ModifierKeys.Alt, 0x12),
+        (ModifierKeys.Shift, 0x10),
+        (ModifierKeys.Windows, LeftWindows)
+    ];
 
     public static async Task OpenQuickSettings(int right, int top, int gap, CancellationToken cancellationToken)
     {
@@ -129,22 +140,68 @@ internal static class SystemShortcuts
         }
     }
 
-    public static void SendCtrlAltShortcut(ushort key)
+    public static void SendMessengerShortcut(string? shortcut)
     {
-        const ushort shift = 0x10;
-        const ushort control = 0x11;
-        const ushort alt = 0x12;
-        const ushort rightWindows = 0x5C;
-        if (GetAsyncKeyState(shift) < 0 || GetAsyncKeyState(control) < 0 || GetAsyncKeyState(alt) < 0 ||
-            GetAsyncKeyState(LeftWindows) < 0 || GetAsyncKeyState(rightWindows) < 0 || GetAsyncKeyState(key) < 0)
+        var keys = ParseShortcut(shortcut);
+        if (keys is null)
+        {
+            Trace.TraceWarning("Invalid messenger keyboard shortcut.");
+            return;
+        }
+
+        if (GetAsyncKeyState(keys[^1]) < 0 || GetAsyncKeyState(RightWindows) < 0 ||
+            ShortcutModifiers.Any(modifier => GetAsyncKeyState(modifier.VirtualKey) < 0))
         {
             return;
         }
 
-        if (!TrySendShortcut(control, alt, key))
+        if (!TrySendShortcut(keys))
         {
-            Trace.TraceWarning("Could not send Ctrl+Alt+{0}.", (char)key);
+            Trace.TraceWarning("Could not send the messenger keyboard shortcut.");
         }
+    }
+
+    private static ushort[]? ParseShortcut(string? shortcut)
+    {
+        if (string.IsNullOrWhiteSpace(shortcut) || shortcut.Contains(',') ||
+            shortcut.Split('+', StringSplitOptions.TrimEntries).Contains(string.Empty))
+        {
+            return null;
+        }
+
+        KeyGesture gesture;
+        try
+        {
+            if (new KeyGestureConverter().ConvertFromInvariantString(shortcut) is not KeyGesture parsed)
+            {
+                return null;
+            }
+
+            gesture = parsed;
+        }
+        catch (Exception error) when (error is ArgumentException or NotSupportedException or FormatException or OverflowException)
+        {
+            return null;
+        }
+
+        var key = KeyInterop.VirtualKeyFromKey(gesture.Key);
+        if (key is 0 or LeftWindows or RightWindows or (>= 0x10 and <= 0x12) or (>= 0xA0 and <= 0xA5) ||
+            (gesture.Modifiers == ModifierKeys.None && gesture.Key is not (>= Key.F1 and <= Key.F24)))
+        {
+            return null;
+        }
+
+        var keys = new List<ushort>(ShortcutModifiers.Length + 1);
+        foreach (var (modifier, virtualKey) in ShortcutModifiers)
+        {
+            if (gesture.Modifiers.HasFlag(modifier))
+            {
+                keys.Add(virtualKey);
+            }
+        }
+
+        keys.Add((ushort)key);
+        return keys.ToArray();
     }
 
     private static bool TrySendShortcut(params ushort[] keys)
@@ -152,8 +209,10 @@ internal static class SystemShortcuts
         var inputs = new Input[keys.Length * 2];
         for (int index = 0; index < keys.Length; index++)
         {
-            inputs[index] = Key(keys[index], 0);
-            inputs[inputs.Length - 1 - index] = Key(keys[index], KeyUp);
+            var key = keys[index];
+            var flags = (MapVirtualKeyW(key, MapVkToVscEx) & 0xFF00) == 0xE000 ? ExtendedKey : 0;
+            inputs[index] = CreateKeyboardInput(key, flags);
+            inputs[inputs.Length - 1 - index] = CreateKeyboardInput(key, flags | KeyUp);
         }
 
         var size = Marshal.SizeOf<Input>();
@@ -173,7 +232,7 @@ internal static class SystemShortcuts
         return false;
     }
 
-    private static Input Key(ushort key, uint flags) => new()
+    private static Input CreateKeyboardInput(ushort key, uint flags) => new()
     {
         Type = 1,
         Data = new InputData { Keyboard = new KeyboardInput { Key = key, Flags = flags } }
@@ -214,6 +273,9 @@ internal static class SystemShortcuts
 
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern short GetAsyncKeyState(int key);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern uint MapVirtualKeyW(uint code, uint mapType);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     private static extern nint FindWindowW(string className, string? windowName);

@@ -12,10 +12,18 @@ internal enum TopBarTheme { System, Dark, Light }
 internal sealed record AppearanceSettings
 {
     public const string DefaultShortcutFolder = "Shortcuts";
+    private const string DefaultQqOpenShortcut = "Ctrl+Alt+X";
+    private const string DefaultWeChatOpenShortcut = "Ctrl+Alt+W";
 
     public TopBarTheme Theme { get; init; } = TopBarTheme.System;
     public bool AcrylicEnabled { get; init; } = true;
     public string? ShortcutFolder { get; init; } = DefaultShortcutFolder;
+
+    [JsonConverter(typeof(ShortcutStringConverter))]
+    public string? QqOpenShortcut { get; init; } = DefaultQqOpenShortcut;
+
+    [JsonConverter(typeof(ShortcutStringConverter))]
+    public string? WeChatOpenShortcut { get; init; } = DefaultWeChatOpenShortcut;
 
     public static string Folder { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WindowsTopBar");
@@ -28,7 +36,7 @@ internal sealed record AppearanceSettings
     {
         try
         {
-            using var file = File.OpenRead(path);
+            using var file = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
             var settings = JsonSerializer.Deserialize<AppearanceSettings>(file, JsonOptions);
             return settings is not null && Enum.IsDefined(settings.Theme) ? settings : new();
         }
@@ -53,11 +61,15 @@ internal sealed record AppearanceSettings
                 return;
             }
 
-            if (JsonNode.Parse(File.ReadAllText(path)) is JsonObject settings &&
-                !settings.ContainsKey(nameof(ShortcutFolder)))
+            if (JsonNode.Parse(File.ReadAllText(path)) is JsonObject settings)
             {
-                settings[nameof(ShortcutFolder)] = DefaultShortcutFolder;
-                TryWrite(path, JsonSerializer.SerializeToUtf8Bytes(settings, JsonOptions));
+                var addedDefaults = settings.TryAdd(nameof(ShortcutFolder), DefaultShortcutFolder);
+                addedDefaults |= settings.TryAdd(nameof(QqOpenShortcut), DefaultQqOpenShortcut);
+                addedDefaults |= settings.TryAdd(nameof(WeChatOpenShortcut), DefaultWeChatOpenShortcut);
+                if (addedDefaults)
+                {
+                    TryWrite(path, JsonSerializer.SerializeToUtf8Bytes(settings, JsonOptions));
+                }
             }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
@@ -92,5 +104,23 @@ internal sealed record AppearanceSettings
 
             return false;
         }
+    }
+
+    private sealed class ShortcutStringConverter : JsonConverter<string>
+    {
+        public override string? Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options)
+        {
+            if (reader.TokenType == JsonTokenType.String)
+            {
+                return reader.GetString();
+            }
+
+            // Ignore a malformed shortcut without discarding the other settings.
+            reader.Skip();
+            return null;
+        }
+
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options) =>
+            writer.WriteStringValue(value);
     }
 }

@@ -456,6 +456,7 @@ public partial class MainWindow : Window
     {
         var now = DateTime.Now;
         ClockText.Text = now.ToString("HH:mm", CultureInfo.InvariantCulture);
+        ClockArea.ToolTip = now.ToString("yyyy年M月d日 dddd", CultureInfo.GetCultureInfo("zh-CN"));
         _clock.Stop();
         _clock.Interval = TimeSpan.FromTicks(TimeSpan.TicksPerMinute - (now.Ticks % TimeSpan.TicksPerMinute));
         _clock.Start();
@@ -482,7 +483,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        updated = updated with { ShortcutFolder = AppearanceSettings.Load(AppearanceSettings.FilePath).ShortcutFolder };
+        // Theme changes must preserve edits made in settings.json while the bar is running.
+        updated = AppearanceSettings.Load(AppearanceSettings.FilePath) with
+        {
+            Theme = updated.Theme,
+            AcrylicEnabled = updated.AcrylicEnabled
+        };
         if (!updated.TrySave(AppearanceSettings.FilePath))
         {
             UpdateThemeMenu();

@@ -124,7 +124,13 @@ internal sealed class MessengerWindows : IDisposable
         // A tray-hidden window needs the client's own restore handler.
         if (!TryActivateMainWindow(names) && IsRunning(names) && !cancellationToken.IsCancellationRequested)
         {
-            SystemShortcuts.SendCtrlAltShortcut(messenger == Messenger.QQ ? 'X' : 'W');
+            var settings = AppearanceSettings.Load(AppearanceSettings.FilePath);
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                SystemShortcuts.SendMessengerShortcut(messenger == Messenger.QQ
+                    ? settings.QqOpenShortcut
+                    : settings.WeChatOpenShortcut);
+            }
         }
     }
 
