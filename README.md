@@ -8,6 +8,7 @@
 
 顶栏在主屏幕顶部显示，右侧显示本地时间。鼠标停在时间区域约 500 毫秒会显示当天的日期和星期。Windows AppBar 注册成功时为最大化窗口预留顶部空间。
 
+- 左键点击顶栏空白处，可切回当前屏幕最靠前的最大化窗口或明确的左右贴靠布局。
 - 右键点击顶栏空白处，可打开配置文件目录或通过「主题」选择深色、浅色或跟随主题。默认跟随 Windows 的系统颜色模式。浅色为暖灰底和深灰字，深色为炭灰底和浅灰字。
 - 「亚克力效果」默认勾选，可单独关闭。原生亚克力可用时使用 Windows 毛玻璃。关闭 Windows 透明效果或原生材质不可用时，应用仍会用栏下窄带的平均色轻微染色。取消勾选后使用实色，高对比度模式使用系统颜色。
 - 每次修改主题或亚克力开关都会立即保存到 `%LOCALAPPDATA%\WindowsTopBar\settings.json`，下次启动自动读取。配置文件缺失或无法读取时使用默认设置。
@@ -28,10 +29,11 @@ dotnet run --project src/WindowsTopBar/WindowsTopBar.csproj
 
 运行后可在主屏幕顶部看到顶栏。右键单击顶栏并选择「退出」即可关闭应用和释放工作区。
 
-Release 构建后可运行配置和快捷键回归检查。
+Release 构建后可运行以下回归检查。
 
 ```powershell
 dotnet run --file tests/SettingsChecks.cs -- src/WindowsTopBar/bin/Release/net10.0-windows/WindowsTopBar.dll
+dotnet run --file tests/WindowSelectionChecks.cs -- src/WindowsTopBar/bin/Release/net10.0-windows/WindowsTopBar.dll
 ```
 
 ## 项目结构

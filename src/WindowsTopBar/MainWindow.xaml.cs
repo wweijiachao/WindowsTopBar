@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -299,6 +300,9 @@ public partial class MainWindow : Window
                 });
         }
     }
+
+    private void BarBackground_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) =>
+        _appBar?.ActivateWindowBelow((int)PointToScreen(e.GetPosition(this)).X);
 
     private void Shortcuts_Click(object sender, RoutedEventArgs e)
     {

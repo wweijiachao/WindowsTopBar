@@ -1,5 +1,9 @@
 # 开发约定
 
+## 需求确认
+
+- 收到需求后，先回答能否实现。可实现时说明解决方式、好处和代价，等用户明确同意后再开始编码。
+
 ## 技术规范
 
 - 目标平台为 Windows 11，使用 C#、WPF、.NET 10 LTS 和 `net10.0-windows`，启用可空引用类型。命名遵循 C# 惯例，文件使用 UTF-8。
@@ -13,6 +17,7 @@
 ## 验证
 
 - 修改代码后在 Windows 上运行 `dotnet build WindowsTopBar.slnx -c Release`。涉及界面或生命周期时，手动验证启动、显示和正常退出。
+- 如果构建或替换时 `WindowsTopBar.exe` 被占用，可直接强制关闭占用该文件的 WindowsTopBar 进程。
 - 为关键可独立验证的逻辑和回归问题补充自动化测试。有测试项目后运行 `dotnet test WindowsTopBar.slnx -c Release`。涉及 Win32 集成时，手动覆盖相关场景和失败路径。
 
 ## 安全边界

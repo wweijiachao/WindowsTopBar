@@ -22,17 +22,24 @@ internal sealed class AppBar : IDisposable
     private const int WmDisplayChange = 0x007E;
     private const int WmDpiChanged = 0x02E0;
     private const uint MonitorDefaultToPrimary = 1;
+    private const int DwmExtendedFrameBounds = 9;
+    private const int DwmCloaked = 14;
+    private const int SnapEdgeToleranceDip = 16;
     private const int GwlExStyle = -20;
+    private const int WsExTopmost = 0x00000008;
     private const int WsExToolWindow = 0x00000080;
     private const int WsExAppWindow = 0x00040000;
+    private const int WsExNoActivate = 0x08000000;
     private const uint SwpNoSize = 0x0001;
     private const uint SwpNoMove = 0x0002;
     private const uint SwpNoZOrder = 0x0004;
     private const uint SwpNoActivate = 0x0010;
     private const uint SwpFrameChanged = 0x0020;
+    private const uint SwpAsyncWindowPos = 0x4000;
     private static readonly nint HwndTopmost = -1;
     private static readonly nint HwndNotTopmost = -2;
     private static readonly nint HwndBottom = 1;
+    private static readonly IsWindowArrangedCallback? IsWindowArranged = LoadIsWindowArranged();
 
     private readonly HwndSource _source;
     private readonly nint _handle;
@@ -93,6 +100,115 @@ internal sealed class AppBar : IDisposable
         _pendingPosition?.Abort();
         _pendingPosition = null;
         Unregister();
+    }
+
+    public void ActivateWindowBelow(int screenX)
+    {
+        var monitor = MonitorFromWindow(_handle, 0);
+        var info = new MonitorInfo { Size = (uint)Marshal.SizeOf<MonitorInfo>() };
+        if (monitor == 0 || !GetMonitorInfoW(monitor, ref info))
+        {
+            return;
+        }
+
+        var dpi = GetDpiForWindow(_handle);
+        var tolerance = (int)Math.Ceiling(SnapEdgeToleranceDip * dpi / 96.0);
+        var (target, companion) = SelectWindow(ReadWindowsInZOrder(monitor), info.WorkArea, tolerance, screenX);
+        if (target == 0 || !SetForegroundWindow(target))
+        {
+            return;
+        }
+
+        if (companion != 0 && !SetWindowPos(companion, 0, 0, 0, 0, 0,
+                SwpNoMove | SwpNoSize | SwpNoActivate | SwpAsyncWindowPos))
+        {
+            Trace.TraceWarning("Could not raise the companion snapped window.");
+        }
+    }
+
+    private IEnumerable<WindowCandidate> ReadWindowsInZOrder(nint monitor)
+    {
+        var desktop = GetDesktopWindow();
+        var visited = new HashSet<nint>();
+        for (var window = FindWindowExW(desktop, 0, null, null); window != 0 && visited.Add(window);
+             window = FindWindowExW(desktop, window, null, null))
+        {
+            if (window == _handle || !IsWindowVisible(window) || !IsWindowEnabled(window) || IsIconic(window) ||
+                MonitorFromWindow(window, 0) != monitor ||
+                DwmGetWindowAttribute(window, DwmCloaked, out int cloaked, sizeof(int)) < 0 || cloaked != 0)
+            {
+                continue;
+            }
+
+            var style = GetWindowLongW(window, GwlExStyle);
+            if ((style == 0 && Marshal.GetLastPInvokeError() != 0) || (style & (WsExToolWindow | WsExNoActivate)) != 0)
+            {
+                continue;
+            }
+
+            if (IsZoomed(window))
+            {
+                yield return new WindowCandidate(window, Maximized: true, default);
+            }
+            else if ((style & WsExTopmost) == 0 && (IsWindowArranged?.Invoke(window) ?? 0) != 0 &&
+                     DwmGetWindowAttribute(window, DwmExtendedFrameBounds, out Rect bounds, Marshal.SizeOf<Rect>()) >= 0)
+            {
+                yield return new WindowCandidate(window, Maximized: false, bounds);
+            }
+        }
+    }
+
+    private static (nint Target, nint Companion) SelectWindow(
+        IEnumerable<WindowCandidate> windows, Rect workArea, int tolerance, int screenX)
+    {
+        WindowCandidate left = default;
+        WindowCandidate right = default;
+        nint maximized = 0;
+        var ambiguous = false;
+        foreach (var window in windows)
+        {
+            // A maximized window separates the visible layout from any snapped windows behind it.
+            if (window.Maximized)
+            {
+                maximized = window.Handle;
+                break;
+            }
+
+            var bounds = window.Bounds;
+            if (bounds.Right <= bounds.Left || Math.Abs(bounds.Top - workArea.Top) > tolerance ||
+                Math.Abs(bounds.Bottom - workArea.Bottom) > tolerance)
+            {
+                continue;
+            }
+
+            if (Math.Abs(bounds.Left - workArea.Left) <= tolerance && bounds.Right < workArea.Right - tolerance)
+            {
+                ambiguous |= left.Handle != 0;
+                left = window;
+            }
+            else if (Math.Abs(bounds.Right - workArea.Right) <= tolerance && bounds.Left > workArea.Left + tolerance)
+            {
+                ambiguous |= right.Handle != 0;
+                right = window;
+            }
+        }
+
+        if (ambiguous || left.Handle == 0 || right.Handle == 0 ||
+            Math.Abs(left.Bounds.Right - right.Bounds.Left) > tolerance)
+        {
+            return (maximized, 0);
+        }
+
+        var divider = left.Bounds.Right + (right.Bounds.Left - left.Bounds.Right) / 2;
+        return screenX < divider ? (left.Handle, right.Handle) : (right.Handle, left.Handle);
+    }
+
+    private static IsWindowArrangedCallback? LoadIsWindowArranged()
+    {
+        var module = GetModuleHandleW("user32.dll");
+        return module != 0 && NativeLibrary.TryGetExport(module, "IsWindowArranged", out var address)
+            ? Marshal.GetDelegateForFunctionPointer<IsWindowArrangedCallback>(address)
+            : null;
     }
 
     private void Unregister()
@@ -254,6 +370,11 @@ internal sealed class AppBar : IDisposable
     [StructLayout(LayoutKind.Sequential)]
     private record struct Rect(int Left, int Top, int Right, int Bottom);
 
+    private readonly record struct WindowCandidate(nint Handle, bool Maximized, Rect Bounds);
+
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate int IsWindowArrangedCallback(nint hwnd);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct Point
     {
@@ -281,6 +402,39 @@ internal sealed class AppBar : IDisposable
 
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern nint MonitorFromPoint(Point point, uint flags);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern nint MonitorFromWindow(nint hwnd, uint flags);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern nint GetDesktopWindow();
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern nint FindWindowExW(nint parent, nint after, string? className, string? title);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool IsWindowVisible(nint hwnd);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool IsWindowEnabled(nint hwnd);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool IsIconic(nint hwnd);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool IsZoomed(nint hwnd);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool SetForegroundWindow(nint hwnd);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern nint GetModuleHandleW(string moduleName);
+
+    [DllImport("dwmapi.dll", ExactSpelling = true)]
+    private static extern int DwmGetWindowAttribute(nint hwnd, int attribute, out int value, int size);
+
+    [DllImport("dwmapi.dll", ExactSpelling = true)]
+    private static extern int DwmGetWindowAttribute(nint hwnd, int attribute, out Rect value, int size);
 
     [DllImport("user32.dll", ExactSpelling = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
