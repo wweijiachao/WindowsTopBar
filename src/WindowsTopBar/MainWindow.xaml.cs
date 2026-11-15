@@ -26,7 +26,6 @@ public partial class MainWindow : Window
     private const int PbtApmResumeAutomatic = 0x0012;
     private const byte AcrylicTintOpacity = 180;
     private const double EdgeTintStrength = 0.12;
-    private const int MessengerActivationTimeoutMs = 5000;
     private const string PersonalizeKey = @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
     private static readonly Color LightBackground = Color.FromRgb(241, 239, 235);
     private static readonly Color DarkBackground = Color.FromRgb(38, 39, 41);
@@ -37,8 +36,6 @@ public partial class MainWindow : Window
     private readonly MessengerWindows _messengers = new();
     private long _qqFlashVersion;
     private long _weChatFlashVersion;
-    private long _qqActivationDeadline;
-    private long _weChatActivationDeadline;
     private readonly DispatcherTimer _inputTimer = new(DispatcherPriority.Background)
     {
         Interval = TimeSpan.FromMilliseconds(300)
@@ -111,8 +108,8 @@ public partial class MainWindow : Window
         }
 
         _closing = true;
-        QQGlyph.BeginAnimation(OpacityProperty, null);
-        WeChatGlyph.BeginAnimation(OpacityProperty, null);
+        StopMessengerFlash(Messenger.QQ);
+        StopMessengerFlash(Messenger.WeChat);
         if (_shortcutsMenu is { IsOpen: true } menu)
         {
             menu.IsOpen = false;
@@ -210,8 +207,7 @@ public partial class MainWindow : Window
     {
         if (!_closing)
         {
-            var now = Environment.TickCount64;
-            var watchActivation = _qqActivationDeadline > now || _weChatActivationDeadline > now;
+            var watchActivation = QQGlyph.HasAnimatedProperties || WeChatGlyph.HasAnimatedProperties;
             var (flash, activated) = _messengers.ReadShellEvent(message, wParam, lParam, watchActivation);
             if (flash is { } messenger)
             {
@@ -219,7 +215,7 @@ public partial class MainWindow : Window
             }
             if (activated is { } foreground)
             {
-                ConfirmMessengerActivation(foreground);
+                StopMessengerFlash(foreground);
             }
         }
 
@@ -315,26 +311,22 @@ public partial class MainWindow : Window
         button.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
         if (!running)
         {
-            ActivationDeadline(messenger) = 0;
-            (isQq ? QQGlyph : WeChatGlyph).BeginAnimation(OpacityProperty, null);
+            StopMessengerFlash(messenger);
         }
     }
 
-    private ref long ActivationDeadline(Messenger messenger) =>
-        ref (messenger == Messenger.QQ ? ref _qqActivationDeadline : ref _weChatActivationDeadline);
-
-    private void ConfirmMessengerActivation(Messenger messenger)
-    {
-        ref var deadline = ref ActivationDeadline(messenger);
-        if (deadline > Environment.TickCount64)
-        {
-            deadline = 0;
-            (messenger == Messenger.QQ ? QQGlyph : WeChatGlyph).BeginAnimation(OpacityProperty, null);
-        }
-    }
+    private void StopMessengerFlash(Messenger messenger) =>
+        (messenger == Messenger.QQ ? QQGlyph : WeChatGlyph).BeginAnimation(OpacityProperty, null);
 
     private void FlashMessenger(Messenger messenger)
     {
+        // A queued flash can be delivered after the app switches to the foreground.
+        if (MessengerWindows.ReadForegroundMessenger() == messenger)
+        {
+            StopMessengerFlash(messenger);
+            return;
+        }
+
         var isQq = messenger == Messenger.QQ;
         var button = isQq ? QQButton : WeChatButton;
         var glyph = isQq ? QQGlyph : WeChatGlyph;
@@ -474,7 +466,6 @@ public partial class MainWindow : Window
             return;
         }
 
-        ActivationDeadline(messenger) = 0;
         if (_messengers.TryMinimizeToTray(messenger))
         {
             return;
@@ -483,14 +474,8 @@ public partial class MainWindow : Window
         _openingMessenger = true;
         try
         {
-            ActivationDeadline(messenger) = Environment.TickCount64 + MessengerActivationTimeoutMs;
             var token = _windowLifetime.Token;
             await Task.Run(() => MessengerWindows.Activate(messenger, token));
-            if (!_closing && ActivationDeadline(messenger) > Environment.TickCount64 &&
-                MessengerWindows.ReadForegroundMessenger() == messenger)
-            {
-                ConfirmMessengerActivation(messenger);
-            }
         }
         finally
         {

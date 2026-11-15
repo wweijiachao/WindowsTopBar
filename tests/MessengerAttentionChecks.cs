@@ -37,8 +37,7 @@ internal static class MessengerAttentionChecks
             var qqGlyph = (UIElement)window.FindName("QQGlyph");
             var weChatGlyph = (UIElement)window.FindName("WeChatGlyph");
             var flash = type.GetMethod("FlashMessenger", members)!;
-            var confirm = type.GetMethod("ConfirmMessengerActivation", members)!;
-            var qqDeadline = type.GetField("_qqActivationDeadline", members)!;
+            var stop = type.GetMethod("StopMessengerFlash", members)!;
             flash.Invoke(window, [qq]);
             flash.Invoke(window, [weChat]);
 
@@ -52,15 +51,9 @@ internal static class MessengerAttentionChecks
             }
             Check(stillFlashing, "The icons stopped flashing before acknowledgment.");
 
-            confirm.Invoke(window, [weChat]);
-            Check(weChatGlyph.HasAnimatedProperties, "An unrelated activation cleared WeChat.");
-            qqDeadline.SetValue(window, Environment.TickCount64 - 1);
-            confirm.Invoke(window, [qq]);
-            Check(qqGlyph.HasAnimatedProperties, "An expired request cleared QQ.");
-            qqDeadline.SetValue(window, Environment.TickCount64 + 1000);
-            confirm.Invoke(window, [qq]);
-            Check(!qqGlyph.HasAnimatedProperties && qqGlyph.Opacity == 1, "Acknowledged QQ kept flashing.");
-            Check(weChatGlyph.HasAnimatedProperties, "Acknowledging QQ cleared WeChat.");
+            stop.Invoke(window, [qq]);
+            Check(!qqGlyph.HasAnimatedProperties && qqGlyph.Opacity == 1, "QQ kept flashing after it reached the foreground.");
+            Check(weChatGlyph.HasAnimatedProperties, "Stopping QQ also cleared WeChat.");
             flash.Invoke(window, [qq]);
             Check(qqGlyph.HasAnimatedProperties, "A later flash did not restart QQ.");
             type.GetMethod("UpdateMessengerVisibility", members)!.Invoke(window, [weChat, false]);
