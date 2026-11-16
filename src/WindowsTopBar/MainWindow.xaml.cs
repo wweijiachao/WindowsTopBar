@@ -60,6 +60,8 @@ public partial class MainWindow : Window
     private readonly CancellationTokenSource _windowLifetime = new();
     private bool _openingQuickSettings;
     private bool _openingMessenger;
+    private bool _openingClashVergeMenu;
+    private Task<string?>? _clashVergeToolTipRead;
     private ContextMenu? _shortcutsMenu;
     private int? _shortcutsDismissPress;
 
@@ -248,8 +250,9 @@ public partial class MainWindow : Window
         {
             var qqFlashAtStart = _qqFlashVersion;
             var weChatFlashAtStart = _weChatFlashVersion;
-            var (battery, wifi, audio, messengers) = await Task.Run(() =>
-                (SystemStatus.ReadBattery(), SystemStatus.ReadWifi(), AudioStatus.Read(), MessengerWindows.ReadRunning()));
+            var (battery, wifi, audio, messengers, clashVergeRunning) = await Task.Run(() =>
+                (SystemStatus.ReadBattery(), SystemStatus.ReadWifi(), AudioStatus.Read(),
+                    MessengerWindows.ReadRunning(), ClashVergeTray.IsRunning()));
             if (_closing)
             {
                 return;
@@ -264,7 +267,8 @@ public partial class MainWindow : Window
             {
                 UpdateMessengerVisibility(Messenger.WeChat, messengers.WeChat);
             }
-            UpdateMessengerSeparator();
+            ClashVergeButton.Visibility = clashVergeRunning ? Visibility.Visible : Visibility.Collapsed;
+            UpdateAppSeparator();
             // A window can still be restoring when its foreground event arrives.
             if (HasMessengerFlash && MessengerWindows.ReadForegroundMessenger() is { } foreground)
             {
@@ -298,8 +302,9 @@ public partial class MainWindow : Window
         }
     }
 
-    private void UpdateMessengerSeparator() =>
-        MessengerSeparator.Visibility = QQButton.Visibility == Visibility.Visible || WeChatButton.Visibility == Visibility.Visible
+    private void UpdateAppSeparator() =>
+        AppSeparator.Visibility = QQButton.Visibility == Visibility.Visible || WeChatButton.Visibility == Visibility.Visible ||
+            ClashVergeButton.Visibility == Visibility.Visible
             ? Visibility.Visible : Visibility.Collapsed;
 
     private void UpdateMessengerVisibility(Messenger messenger, bool running)
@@ -339,7 +344,7 @@ public partial class MainWindow : Window
         var button = isQq ? QQButton : WeChatButton;
         var glyph = isQq ? QQGlyph : WeChatGlyph;
         button.Visibility = Visibility.Visible;
-        UpdateMessengerSeparator();
+        UpdateAppSeparator();
 
         ref var flashVersion = ref (isQq ? ref _qqFlashVersion : ref _weChatFlashVersion);
         flashVersion++;
@@ -488,6 +493,52 @@ public partial class MainWindow : Window
         finally
         {
             _openingMessenger = false;
+        }
+    }
+
+    private async void ClashVergeToolTip_Opened(object sender, RoutedEventArgs e)
+    {
+        ClashVergeToolTipText.Text = "Clash Verge";
+        var read = _clashVergeToolTipRead ??= Task.Run(ClashVergeTray.ReadTooltip);
+        var text = await read;
+        if (_clashVergeToolTipRead == read)
+        {
+            _clashVergeToolTipRead = null;
+        }
+        if (!_closing && ClashVergeToolTip.IsOpen)
+        {
+            ClashVergeToolTipText.Text = text ?? "Clash Verge\n托盘状态暂不可用";
+        }
+    }
+
+    private async void ClashVerge_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        e.Handled = true;
+        if (_closing || _openingClashVergeMenu)
+        {
+            return;
+        }
+
+        _openingClashVergeMenu = true;
+        ClashVergeToolTip.IsOpen = false;
+        try
+        {
+            var target = await Task.Run(ClashVergeTray.FindMenuTarget);
+            if (_closing || !ClashVergeButton.IsMouseOver)
+            {
+                return;
+            }
+
+            if (!ClashVergeTray.TryShowMenu(target))
+            {
+                var menu = ClashVergeButton.ContextMenu;
+                menu.PlacementTarget = ClashVergeButton;
+                menu.IsOpen = true;
+            }
+        }
+        finally
+        {
+            _openingClashVergeMenu = false;
         }
     }
 

@@ -91,7 +91,22 @@
                           Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                           Data="F0 M 7,1 C 3.2,1 0.5,3.5 0.5,6.5 C 0.5,8.2 1.4,9.5 2.6,10.5 L 2.1,12.6 4.7,11.4 C 5.4,11.6 6,11.8 6.7,11.8 C 6.6,11.4 6.5,11 6.5,10.6 C 6.5,7.3 9.4,4.8 13.1,4.8 C 12.3,2.5 9.9,1 7,1 Z M 4.1,4.5 A 0.75,0.75 0 1 0 5.6,4.5 A 0.75,0.75 0 1 0 4.1,4.5 Z M 8.4,4.5 A 0.75,0.75 0 1 0 9.9,4.5 A 0.75,0.75 0 1 0 8.4,4.5 Z M 13.1,5.8 C 10,5.8 7.5,7.9 7.5,10.6 C 7.5,13.3 10,15.4 13.1,15.4 C 13.9,15.4 14.6,15.3 15.2,15 L 17.3,16 16.8,14.1 C 18,13.2 18.7,12 18.7,10.6 C 18.7,7.9 16.2,5.8 13.1,5.8 Z M 10.4,9.3 A 0.65,0.65 0 1 0 11.7,9.3 A 0.65,0.65 0 1 0 10.4,9.3 Z M 14.5,9.3 A 0.65,0.65 0 1 0 15.8,9.3 A 0.65,0.65 0 1 0 14.5,9.3 Z" />
                 </Button>
-                <TextBlock x:Name="MessengerSeparator" Text="|" Visibility="Collapsed"
+                <Button x:Name="ClashVergeButton" Style="{StaticResource StatusButton}" Visibility="Collapsed"
+                        Content="Clash Verge" AutomationProperties.HelpText="右键打开托盘菜单"
+                        ContextMenuOpening="ClashVerge_ContextMenuOpening"
+                        ToolTipService.InitialShowDelay="500" ToolTipService.BetweenShowDelay="0">
+                    <Button.ToolTip>
+                        <ToolTip x:Name="ClashVergeToolTip" Opened="ClashVergeToolTip_Opened" Placement="Bottom">
+                            <TextBlock x:Name="ClashVergeToolTipText" Text="Clash Verge" TextWrapping="Wrap" MaxWidth="320" />
+                        </ToolTip>
+                    </Button.ToolTip>
+                    <Button.ContextMenu>
+                        <ContextMenu Placement="Bottom">
+                            <MenuItem Header="Clash Verge 托盘菜单不可用" IsEnabled="False" />
+                        </ContextMenu>
+                    </Button.ContextMenu>
+                </Button>
+                <TextBlock x:Name="AppSeparator" Text="|" Visibility="Collapsed"
                            Margin="4,0" VerticalAlignment="Center" Opacity="0.45" IsHitTestVisible="False" />
                 <Grid x:Name="InputIndicator" MinWidth="33" Background="Transparent" Style="{StaticResource StatusTooltipTiming}"
                       ToolTip="输入法" AutomationProperties.Name="输入法">

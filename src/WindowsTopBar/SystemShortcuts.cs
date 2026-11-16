@@ -53,15 +53,15 @@ internal static class SystemShortcuts
         }
     }
 
-    private static AutomationElement? FindQuickSettingsButton() => GetTaskbar()?.FindFirst(TreeScope.Descendants,
+    private static AutomationElement? FindQuickSettingsButton() => FindShellWindow("Shell_TrayWnd")?.FindFirst(TreeScope.Descendants,
         new AndCondition(
             new PropertyCondition(AutomationElement.AutomationIdProperty, "SystemTrayIcon"),
             new PropertyCondition(AutomationElement.ClassNameProperty, "SystemTray.OmniButtonCenter")));
 
-    private static AutomationElement? GetTaskbar()
+    internal static AutomationElement? FindShellWindow(string className)
     {
-        var taskbar = FindWindowW("Shell_TrayWnd", null);
-        return taskbar == 0 ? null : AutomationElement.FromHandle(taskbar);
+        var window = FindWindowW(className, null);
+        return window == 0 ? null : AutomationElement.FromHandle(window);
     }
 
     private static bool InvokeTaskbar(Func<AutomationElement?> findButton)
@@ -116,7 +116,7 @@ internal static class SystemShortcuts
         }
     }
 
-    private static bool IsAutomationFailure(Exception error) =>
+    internal static bool IsAutomationFailure(Exception error) =>
         error is ElementNotAvailableException or InvalidOperationException or COMException or ArgumentException;
 
     private static bool IsQuickSettings(nint window)
