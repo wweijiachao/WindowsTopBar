@@ -9,6 +9,7 @@ using System.Reflection;
 var assembly = Assembly.LoadFrom(Path.GetFullPath(args[0]));
 var settings = assembly.GetType("WindowsTopBar.ClashVergeSettings", throwOnError: true)!;
 var readTooltip = settings.GetMethod("ReadTooltip")!;
+var readShortcut = settings.GetMethod("ReadGlobalShortcut")!;
 var folder = Directory.CreateTempSubdirectory("WindowsTopBarClashChecks").FullName;
 var vergePath = Path.Combine(folder, "verge.yaml");
 var profilesPath = Path.Combine(folder, "profiles.yaml");
@@ -35,6 +36,21 @@ try
     File.Delete(profilesPath);
     Check(Equals(readTooltip.Invoke(null, [folder, null]), "Clash Verge\n系统代理: off\nTUN: on（配置）\n订阅: 未知"),
         "Missing profile data should preserve the available status.");
+
+    File.WriteAllText(vergePath, """
+        hotkeys:
+        - toggle_tun_mode,CTRL+ALT+T
+        - 'quit,CTRL+ALT+F11'
+        web_ui_list:
+        - quit,CTRL+ALT+F12
+        enable_global_hotkey: true
+        """);
+    Check(Equals(readShortcut.Invoke(null, [folder, "toggle_tun_mode"]), "CTRL+ALT+T"), "Missing configured TUN shortcut.");
+    Check(Equals(readShortcut.Invoke(null, [folder, "quit"]), "CTRL+ALT+F11"), "Read a quit binding from outside hotkeys.");
+
+    File.WriteAllText(vergePath, "hotkeys:\n- toggle_tun_mode,CTRL+ALT+T\nenable_global_hotkey: false\n");
+    Check(readShortcut.Invoke(null, [folder, "toggle_tun_mode"]) is null, "Used a shortcut with global hotkeys disabled.");
+    Check(readShortcut.Invoke(null, [folder, "quit"]) is null, "Invented an unconfigured quit shortcut.");
 }
 finally
 {
@@ -43,7 +59,7 @@ finally
     Directory.Delete(folder);
 }
 
-Console.WriteLine("Clash Verge tooltip checks passed.");
+Console.WriteLine("Clash Verge tooltip and shortcut checks passed.");
 
 static void Check(bool condition, string message)
 {

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -11,11 +12,8 @@ internal static class ClashVergeTray
 {
     private const string TrayWindowClass = "tray_icon_app";
     private const uint QueryLimitedInformation = 0x1000;
-    // Clash Verge Rev 2.5.10 uses tray-icon 0.25.1 on Windows.
-    private const uint TrayIconCallback = 6002;
-    private const int RightButtonUp = 0x0205;
 
-    public static bool IsRunning() => FindTrayWindow() is not null;
+    public static bool IsRunning() => FindRunningExecutable() is not null;
 
     public static string? ReadTooltip()
     {
@@ -25,15 +23,13 @@ internal static class ClashVergeTray
             return tooltip;
         }
 
-        if (FindTrayWindow() is not { } tray)
+        if (FindRunningExecutable() is not { } executable)
         {
             return null;
         }
 
-        var version = ReadVersion(tray.Executable)?.FileVersion;
-        var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "io.github.clash-verge-rev.clash-verge-rev");
-        return ClashVergeSettings.ReadTooltip(folder, version);
+        var version = ReadVersion(executable)?.FileVersion;
+        return ClashVergeSettings.ReadTooltip(ClashVergeSettings.Folder, version);
     }
 
     private static string? ReadShellTooltip()
@@ -85,21 +81,49 @@ internal static class ClashVergeTray
         text.StartsWith("Clash Verge ", StringComparison.OrdinalIgnoreCase) &&
         text.Count(character => character == '\n') >= 3;
 
-    public static (nint Window, uint ProcessId)? FindMenuTarget()
+    public static string? RunCommand(string command, CancellationToken cancellationToken)
     {
-        if (FindTrayWindow() is not { } tray)
+        var executable = FindRunningExecutable();
+        if (cancellationToken.IsCancellationRequested)
         {
             return null;
         }
+        if (executable is null)
+        {
+            return "Clash Verge 未运行。";
+        }
 
-        var version = ReadVersion(tray.Executable);
-        return version is { FileMajorPart: 2, FileMinorPart: 5, FileBuildPart: 10 }
-            ? (tray.Window, tray.ProcessId) : null;
+        if (command == "dashboard")
+        {
+            try
+            {
+                // Starting the executable again asks its existing instance to show the dashboard.
+                ShortcutDirectory.Launch(executable);
+                return null;
+            }
+            catch (Win32Exception)
+            {
+                return "无法打开 Clash Verge 仪表板。";
+            }
+        }
+
+        var shortcut = ClashVergeSettings.ReadGlobalShortcut(ClashVergeSettings.Folder, command);
+        if (shortcut is null)
+        {
+            return command == "quit"
+                ? "请在 Clash Verge 的 verge.yaml 中将「- quit,CTRL+ALT+F11」加到 hotkeys 列表，开启全局快捷键后重启 Clash Verge。"
+                : "请在 Clash Verge 的快捷键设置中为「开启/关闭 TUN 模式」设置按键，并开启全局快捷键。";
+        }
+
+        // Clash Verge only handles a Q-based quit shortcut while its own window has focus.
+        if (command == "quit" && shortcut[(shortcut.LastIndexOf('+') + 1)..].Trim().Equals("Q", StringComparison.OrdinalIgnoreCase))
+        {
+            return "请把 Clash Verge 的退出快捷键改用其他主键，例如 Ctrl+Alt+F11。";
+        }
+
+        return cancellationToken.IsCancellationRequested || SystemShortcuts.TrySendConfiguredShortcut(shortcut)
+            ? null : "无法发送 Clash Verge 快捷键，请检查按键配置后重试。";
     }
-
-    public static bool TryShowMenu((nint Window, uint ProcessId)? target) =>
-        target is { } tray && GetWindowThreadProcessId(tray.Window, out var owner) != 0 && owner == tray.ProcessId &&
-        PostMessageW(tray.Window, TrayIconCallback, 0, RightButtonUp);
 
     private static FileVersionInfo? ReadVersion(string executable)
     {
@@ -113,7 +137,7 @@ internal static class ClashVergeTray
         }
     }
 
-    private static (nint Window, uint ProcessId, string Executable)? FindTrayWindow()
+    private static string? FindRunningExecutable()
     {
         for (var window = FindWindowExW(0, 0, TrayWindowClass, null);
             window != 0; window = FindWindowExW(0, window, TrayWindowClass, null))
@@ -141,7 +165,7 @@ internal static class ClashVergeTray
             if (fileName.Equals("clash-verge.exe", StringComparison.OrdinalIgnoreCase) ||
                 fileName.Equals("Clash Verge.exe", StringComparison.OrdinalIgnoreCase))
             {
-                return (window, processId, executable);
+                return executable;
             }
         }
 
@@ -159,7 +183,4 @@ internal static class ClashVergeTray
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     private static extern bool QueryFullProcessImageNameW(SafeProcessHandle process, uint flags, StringBuilder name, ref uint size);
-
-    [DllImport("user32.dll", ExactSpelling = true)]
-    private static extern bool PostMessageW(nint window, uint message, nint wParam, nint lParam);
 }

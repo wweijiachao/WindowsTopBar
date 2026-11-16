@@ -171,7 +171,7 @@ internal sealed class MessengerWindows : IDisposable
             var settings = AppearanceSettings.Load(AppearanceSettings.FilePath);
             if (!cancellationToken.IsCancellationRequested)
             {
-                SystemShortcuts.SendMessengerShortcut(messenger == Messenger.QQ
+                SystemShortcuts.TrySendConfiguredShortcut(messenger == Messenger.QQ
                     ? settings.QqOpenShortcut
                     : settings.WeChatOpenShortcut);
             }

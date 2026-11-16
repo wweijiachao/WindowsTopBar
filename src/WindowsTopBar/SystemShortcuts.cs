@@ -140,25 +140,28 @@ internal static class SystemShortcuts
         }
     }
 
-    public static void SendMessengerShortcut(string? shortcut)
+    public static bool TrySendConfiguredShortcut(string? shortcut)
     {
         var keys = ParseShortcut(shortcut);
         if (keys is null)
         {
-            Trace.TraceWarning("Invalid messenger keyboard shortcut.");
-            return;
+            Trace.TraceWarning("Invalid keyboard shortcut.");
+            return false;
         }
 
         if (GetAsyncKeyState(keys[^1]) < 0 || GetAsyncKeyState(RightWindows) < 0 ||
             ShortcutModifiers.Any(modifier => GetAsyncKeyState(modifier.VirtualKey) < 0))
         {
-            return;
+            return false;
         }
 
         if (!TrySendShortcut(keys))
         {
-            Trace.TraceWarning("Could not send the messenger keyboard shortcut.");
+            Trace.TraceWarning("Could not send the configured keyboard shortcut.");
+            return false;
         }
+
+        return true;
     }
 
     private static ushort[]? ParseShortcut(string? shortcut)

@@ -60,7 +60,6 @@ public partial class MainWindow : Window
     private readonly CancellationTokenSource _windowLifetime = new();
     private bool _openingQuickSettings;
     private bool _openingMessenger;
-    private bool _openingClashVergeMenu;
     private Task<string?>? _clashVergeToolTipRead;
     private ContextMenu? _shortcutsMenu;
     private int? _shortcutsDismissPress;
@@ -511,34 +510,21 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void ClashVerge_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    private void ClashVerge_ContextMenuOpening(object sender, ContextMenuEventArgs e) =>
+        ClashVergeToolTip.IsOpen = false;
+
+    private async void ClashVergeMenu_Click(object sender, RoutedEventArgs e)
     {
-        e.Handled = true;
-        if (_closing || _openingClashVergeMenu)
+        if (_closing || sender is not MenuItem { Tag: string command })
         {
             return;
         }
 
-        _openingClashVergeMenu = true;
-        ClashVergeToolTip.IsOpen = false;
-        try
+        var token = _windowLifetime.Token;
+        var error = await Task.Run(() => ClashVergeTray.RunCommand(command, token));
+        if (!_closing && error is not null)
         {
-            var target = await Task.Run(ClashVergeTray.FindMenuTarget);
-            if (_closing || !ClashVergeButton.IsMouseOver)
-            {
-                return;
-            }
-
-            if (!ClashVergeTray.TryShowMenu(target))
-            {
-                var menu = ClashVergeButton.ContextMenu;
-                menu.PlacementTarget = ClashVergeButton;
-                menu.IsOpen = true;
-            }
-        }
-        finally
-        {
-            _openingClashVergeMenu = false;
+            MessageBox.Show(this, error, "Clash Verge", MessageBoxButton.OK, MessageBoxImage.Information);
         }
     }
 
