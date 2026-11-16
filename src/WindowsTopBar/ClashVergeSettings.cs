@@ -10,6 +10,18 @@ internal static class ClashVergeSettings
 
     public static string? ReadTooltip(string folder, string? version)
     {
+        if (ReadSwitches(folder) is not { } status)
+        {
+            return null;
+        }
+
+        var profile = ReadProfileName(Path.Combine(folder, "profiles.yaml"));
+        var title = string.IsNullOrWhiteSpace(version) ? "Clash Verge" : $"Clash Verge {version}";
+        return $"{title}\n系统代理: {SwitchText(status.Proxy)}\nTUN: {SwitchText(status.Tun)}（配置）\n订阅: {profile ?? "未知"}";
+    }
+
+    public static (bool? Proxy, bool? Tun)? ReadSwitches(string folder)
+    {
         bool? proxy = null, tun = null;
         try
         {
@@ -36,9 +48,7 @@ internal static class ClashVergeSettings
             return null;
         }
 
-        var profile = ReadProfileName(Path.Combine(folder, "profiles.yaml"));
-        var title = string.IsNullOrWhiteSpace(version) ? "Clash Verge" : $"Clash Verge {version}";
-        return $"{title}\n系统代理: {SwitchText(proxy)}\nTUN: {SwitchText(tun)}（配置）\n订阅: {profile ?? "未知"}";
+        return (proxy, tun);
     }
 
     public static string? ReadGlobalShortcut(string folder, string command)

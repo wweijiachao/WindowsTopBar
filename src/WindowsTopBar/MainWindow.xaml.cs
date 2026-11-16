@@ -61,6 +61,10 @@ public partial class MainWindow : Window
     private bool _openingQuickSettings;
     private bool _openingMessenger;
     private Task<string?>? _clashVergeToolTipRead;
+    private readonly DispatcherTimer _clashVergeClickTimer = new();
+    private bool _clashVergeDoubleClick;
+    private bool _clashVergeTunEnabled;
+    private Brush? _clashVergeTunBrush;
     private ContextMenu? _shortcutsMenu;
     private int? _shortcutsDismissPress;
 
@@ -73,6 +77,7 @@ public partial class MainWindow : Window
         _tintTimer.Tick += RefreshEdgeTint;
         _statusTimer.Tick += RefreshStatus;
         _inputTimer.Tick += RefreshInputIndicator;
+        _clashVergeClickTimer.Tick += ClashVergeSingleClick;
         Loaded += (_, _) =>
         {
             _inputTimer.Start();
@@ -110,6 +115,8 @@ public partial class MainWindow : Window
         }
 
         _closing = true;
+        _clashVergeClickTimer.Stop();
+        _clashVergeClickTimer.Tick -= ClashVergeSingleClick;
         StopMessengerFlash(Messenger.QQ);
         StopMessengerFlash(Messenger.WeChat);
         if (_shortcutsMenu is { IsOpen: true } menu)
@@ -152,6 +159,10 @@ public partial class MainWindow : Window
         var nativeAcrylic = WindowBackdrop.Apply(_source, useTint, dark);
         var background = dark ? DarkBackground : LightBackground;
         Foreground = highContrast ? SystemColors.WindowTextBrush : FrozenBrush(dark ? LightText : DarkText);
+        _clashVergeTunBrush = highContrast ? SystemColors.HotTrackBrush : FrozenBrush(dark
+            ? Color.FromRgb(118, 211, 145)
+            : Color.FromRgb(26, 105, 58));
+        UpdateClashVergeColor();
 
         if (useTint)
         {
@@ -249,9 +260,9 @@ public partial class MainWindow : Window
         {
             var qqFlashAtStart = _qqFlashVersion;
             var weChatFlashAtStart = _weChatFlashVersion;
-            var (battery, wifi, audio, messengers, clashVergeRunning) = await Task.Run(() =>
+            var (battery, wifi, audio, messengers, clashVerge) = await Task.Run(() =>
                 (SystemStatus.ReadBattery(), SystemStatus.ReadWifi(), AudioStatus.Read(),
-                    MessengerWindows.ReadRunning(), ClashVergeTray.IsRunning()));
+                    MessengerWindows.ReadRunning(), ClashVergeTray.ReadStatus()));
             if (_closing)
             {
                 return;
@@ -266,7 +277,9 @@ public partial class MainWindow : Window
             {
                 UpdateMessengerVisibility(Messenger.WeChat, messengers.WeChat);
             }
-            ClashVergeButton.Visibility = clashVergeRunning ? Visibility.Visible : Visibility.Collapsed;
+            ClashVergeButton.Visibility = clashVerge.Running ? Visibility.Visible : Visibility.Collapsed;
+            _clashVergeTunEnabled = clashVerge.TunEnabled;
+            UpdateClashVergeColor();
             UpdateAppSeparator();
             // A window can still be restoring when its foreground event arrives.
             if (HasMessengerFlash && MessengerWindows.ReadForegroundMessenger() is { } foreground)
@@ -495,6 +508,54 @@ public partial class MainWindow : Window
         }
     }
 
+    private void UpdateClashVergeColor()
+    {
+        if (_clashVergeTunEnabled && _clashVergeTunBrush is { } brush)
+        {
+            ClashVergeLabel.Foreground = brush;
+        }
+        else
+        {
+            ClashVergeLabel.ClearValue(TextBlock.ForegroundProperty);
+        }
+    }
+
+    private async void ClashVerge_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _clashVergeDoubleClick = false;
+        if (!_clashVergeClickTimer.IsEnabled)
+        {
+            return;
+        }
+
+        // Cancel at the second press so a double-click cannot toggle TUN before the release.
+        _clashVergeClickTimer.Stop();
+        _clashVergeDoubleClick = e.ClickCount == 2;
+        if (!_clashVergeDoubleClick)
+        {
+            await RunClashVergeCommand("toggle_tun_mode");
+        }
+    }
+
+    private async void ClashVerge_Click(object sender, RoutedEventArgs e)
+    {
+        if (_clashVergeDoubleClick)
+        {
+            _clashVergeDoubleClick = false;
+            await RunClashVergeCommand("dashboard");
+            return;
+        }
+
+        _clashVergeClickTimer.Interval = ClashVergeTray.DoubleClickInterval;
+        _clashVergeClickTimer.Start();
+    }
+
+    private async void ClashVergeSingleClick(object? sender, EventArgs e)
+    {
+        _clashVergeClickTimer.Stop();
+        await RunClashVergeCommand("toggle_tun_mode");
+    }
+
     private async void ClashVergeToolTip_Opened(object sender, RoutedEventArgs e)
     {
         ClashVergeToolTipText.Text = "Clash Verge";
@@ -515,7 +576,15 @@ public partial class MainWindow : Window
 
     private async void ClashVergeMenu_Click(object sender, RoutedEventArgs e)
     {
-        if (_closing || sender is not MenuItem { Tag: string command })
+        if (sender is MenuItem { Tag: string command })
+        {
+            await RunClashVergeCommand(command);
+        }
+    }
+
+    private async Task RunClashVergeCommand(string command)
+    {
+        if (_closing)
         {
             return;
         }

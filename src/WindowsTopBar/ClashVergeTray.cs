@@ -13,7 +13,11 @@ internal static class ClashVergeTray
     private const string TrayWindowClass = "tray_icon_app";
     private const uint QueryLimitedInformation = 0x1000;
 
-    public static bool IsRunning() => FindRunningExecutable() is not null;
+    public static (bool Running, bool TunEnabled) ReadStatus() => FindRunningExecutable() is null
+        ? default
+        : (true, ClashVergeSettings.ReadSwitches(ClashVergeSettings.Folder)?.Tun == true);
+
+    public static TimeSpan DoubleClickInterval => TimeSpan.FromMilliseconds(GetDoubleClickTime());
 
     public static string? ReadTooltip()
     {
@@ -174,6 +178,9 @@ internal static class ClashVergeTray
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     private static extern nint FindWindowExW(nint parent, nint after, string className, string? title);
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern uint GetDoubleClickTime();
 
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern uint GetWindowThreadProcessId(nint window, out uint processId);

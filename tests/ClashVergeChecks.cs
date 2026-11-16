@@ -9,6 +9,7 @@ using System.Reflection;
 var assembly = Assembly.LoadFrom(Path.GetFullPath(args[0]));
 var settings = assembly.GetType("WindowsTopBar.ClashVergeSettings", throwOnError: true)!;
 var readTooltip = settings.GetMethod("ReadTooltip")!;
+var readSwitches = settings.GetMethod("ReadSwitches")!;
 var readShortcut = settings.GetMethod("ReadGlobalShortcut")!;
 var folder = Directory.CreateTempSubdirectory("WindowsTopBarClashChecks").FullName;
 var vergePath = Path.Combine(folder, "verge.yaml");
@@ -18,6 +19,7 @@ try
     Check(readTooltip.Invoke(null, [folder, "2.5.10"]) is null, "Missing settings should fall back to the app name.");
 
     File.WriteAllText(vergePath, "enable_system_proxy: false\nenable_tun_mode: true\n");
+    Check(readSwitches.Invoke(null, [folder]) is ValueTuple<bool?, bool?> { Item2: true }, "TUN on should enable the green label.");
     File.WriteAllText(profilesPath, """
         current: selected
         items:
@@ -36,6 +38,9 @@ try
     File.Delete(profilesPath);
     Check(Equals(readTooltip.Invoke(null, [folder, null]), "Clash Verge\n系统代理: off\nTUN: on（配置）\n订阅: 未知"),
         "Missing profile data should preserve the available status.");
+
+    File.WriteAllText(vergePath, "enable_tun_mode: false\n");
+    Check(readSwitches.Invoke(null, [folder]) is ValueTuple<bool?, bool?> { Item2: false }, "TUN off should restore the theme color.");
 
     File.WriteAllText(vergePath, """
         hotkeys:
