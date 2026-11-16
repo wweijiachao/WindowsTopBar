@@ -14,11 +14,11 @@
 - 从单项目开始，按实际需求拆分模块。保持 UI 线程畅通，优先采用事件驱动和按需更新。必须轮询时，按需求设定间隔并在退出时停止。
 - 外部应用缺失、权限不足或 API 调用失败时，降级对应功能并保持主窗口可用。退出时释放事件订阅、定时器和原生句柄。
 
-## 验证
+## 构建与验证
 
-- 修改代码后在 Windows 上运行 `dotnet build WindowsTopBar.slnx -c Release`。涉及界面或生命周期时，手动验证启动、显示和正常退出。
-- 如果构建或替换时 `WindowsTopBar.exe` 被占用，可直接强制关闭占用该文件的 WindowsTopBar 进程。
-- 每次构建成功后，直接启动本次生成的 `WindowsTopBar.exe`。
+- 开始修改代码前，先退出当前运行的 WindowsTopBar。正常退出失败时，可以强制关闭该进程。
+- 修改代码后在 Windows 上运行 `dotnet build WindowsTopBar.slnx -c Release --artifacts-path artifacts/<分支名>`。各分支的 Release 分别保存。
+- 开发和验证完成后，直接启动当前分支新生成的 `WindowsTopBar.exe`。涉及界面或生命周期时，手动验证启动、显示和正常退出。
 - 为关键可独立验证的逻辑和回归问题补充自动化测试。有测试项目后运行 `dotnet test WindowsTopBar.slnx -c Release`。涉及 Win32 集成时，手动覆盖相关场景和失败路径。
 
 ## 安全边界

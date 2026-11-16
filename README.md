@@ -7,8 +7,9 @@
 在 Windows 11 上安装 .NET 10 SDK，然后在仓库根目录构建并启动 Release 版本。[下载 .NET 10](https://dotnet.microsoft.com/download/dotnet/10.0)
 
 ```powershell
-dotnet build WindowsTopBar.slnx -c Release
-.\src\WindowsTopBar\bin\Release\net10.0-windows\WindowsTopBar.exe
+$branch = git branch --show-current
+dotnet build WindowsTopBar.slnx -c Release --artifacts-path "artifacts/$branch"
+& ".\artifacts\$branch\bin\WindowsTopBar\release\WindowsTopBar.exe"
 ```
 
 已有 Release 产物时，可以直接双击上述 EXE。运行它需要 .NET 10 Windows 桌面运行时。
@@ -52,9 +53,10 @@ dotnet build WindowsTopBar.slnx -c Release
 Release 构建后可运行以下回归检查。
 
 ```powershell
-dotnet run --file tests/SettingsChecks.cs -- src/WindowsTopBar/bin/Release/net10.0-windows/WindowsTopBar.dll
-dotnet run --file tests/MessengerAttentionChecks.cs -- src/WindowsTopBar/bin/Release/net10.0-windows/WindowsTopBar.dll
-dotnet run --file tests/WindowSelectionChecks.cs -- src/WindowsTopBar/bin/Release/net10.0-windows/WindowsTopBar.dll
+$dll = "artifacts/$(git branch --show-current)/bin/WindowsTopBar/release/WindowsTopBar.dll"
+dotnet run --file tests/SettingsChecks.cs -- $dll
+dotnet run --file tests/MessengerAttentionChecks.cs -- $dll
+dotnet run --file tests/WindowSelectionChecks.cs -- $dll
 ```
 
 ## 项目结构

@@ -64,7 +64,6 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _clashVergeClickTimer = new();
     private bool _clashVergeDoubleClick;
     private bool _clashVergeTunEnabled;
-    private Brush? _clashVergeTunBrush;
     private ContextMenu? _shortcutsMenu;
     private int? _shortcutsDismissPress;
 
@@ -159,10 +158,7 @@ public partial class MainWindow : Window
         var nativeAcrylic = WindowBackdrop.Apply(_source, useTint, dark);
         var background = dark ? DarkBackground : LightBackground;
         Foreground = highContrast ? SystemColors.WindowTextBrush : FrozenBrush(dark ? LightText : DarkText);
-        _clashVergeTunBrush = highContrast ? SystemColors.HotTrackBrush : FrozenBrush(dark
-            ? Color.FromRgb(118, 211, 145)
-            : Color.FromRgb(26, 105, 58));
-        UpdateClashVergeColor();
+        ClashVergeTunDot.Stroke = highContrast ? SystemColors.WindowBrush : FrozenBrush(background);
 
         if (useTint)
         {
@@ -279,7 +275,7 @@ public partial class MainWindow : Window
             }
             ClashVergeButton.Visibility = clashVerge.Running ? Visibility.Visible : Visibility.Collapsed;
             _clashVergeTunEnabled = clashVerge.TunEnabled;
-            UpdateClashVergeColor();
+            UpdateClashVergeTunDot();
             UpdateAppSeparator();
             // A window can still be restoring when its foreground event arrives.
             if (HasMessengerFlash && MessengerWindows.ReadForegroundMessenger() is { } foreground)
@@ -508,17 +504,8 @@ public partial class MainWindow : Window
         }
     }
 
-    private void UpdateClashVergeColor()
-    {
-        if (_clashVergeTunEnabled && _clashVergeTunBrush is { } brush)
-        {
-            ClashVergeLabel.Foreground = brush;
-        }
-        else
-        {
-            ClashVergeLabel.ClearValue(TextBlock.ForegroundProperty);
-        }
-    }
+    private void UpdateClashVergeTunDot() =>
+        ClashVergeTunDot.Visibility = _clashVergeTunEnabled ? Visibility.Visible : Visibility.Collapsed;
 
     private async void ClashVerge_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {

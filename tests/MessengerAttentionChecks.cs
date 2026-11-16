@@ -34,6 +34,16 @@ internal static class MessengerAttentionChecks
             }
             Check(window.IsVisible && statusPending.GetValue(window) is false, "The top bar did not finish startup.");
 
+            var tunEnabled = type.GetField("_clashVergeTunEnabled", members)!;
+            var updateTunDot = type.GetMethod("UpdateClashVergeTunDot", members)!;
+            var tunDot = (UIElement)window.FindName("ClashVergeTunDot");
+            tunEnabled.SetValue(window, true);
+            updateTunDot.Invoke(window, null);
+            Check(tunDot.Visibility == Visibility.Visible, "The Clash Verge dot should appear when TUN is enabled.");
+            tunEnabled.SetValue(window, false);
+            updateTunDot.Invoke(window, null);
+            Check(tunDot.Visibility == Visibility.Collapsed, "The Clash Verge dot should disappear when TUN is disabled.");
+
             var qqGlyph = (UIElement)window.FindName("QQGlyph");
             var weChatGlyph = (UIElement)window.FindName("WeChatGlyph");
             var flash = type.GetMethod("FlashMessenger", members)!;
