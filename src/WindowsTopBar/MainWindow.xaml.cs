@@ -22,8 +22,6 @@ public partial class MainWindow : Window
     private const int MaNoActivate = 3;
     private const int WmThemeChanged = 0x031A;
     private const int WmDwmCompositionChanged = 0x031E;
-    private const int WmPowerBroadcast = 0x0218;
-    private const int PbtApmResumeAutomatic = 0x0012;
     private const byte AcrylicTintOpacity = 180;
     private const double EdgeTintStrength = 0.12;
     private const string PersonalizeKey = @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
@@ -33,6 +31,9 @@ public partial class MainWindow : Window
     private static readonly Color DarkText = Color.FromRgb(51, 53, 58);
 
     private readonly DispatcherTimer _clock = new();
+    private readonly UsageReminder _usageReminder = new();
+    private UsageSystemEvents? _usageSystemEvents;
+    private UsagePhase _usagePhase;
     private readonly MessengerWindows _messengers = new();
     private long _qqFlashVersion;
     private long _weChatFlashVersion;
@@ -98,6 +99,8 @@ public partial class MainWindow : Window
         }
 
         _source.AddHook(OnWindowMessage);
+        _usageSystemEvents = new UsageSystemEvents(_source.Handle);
+        _usageReminder.SetEnabled(_settings.UsageReminderEnabled, UsageSystemEvents.AwakeMilliseconds);
         _messengers.ForegroundWindowChanged += OnMessengerForegroundChanged;
         _messengers.Register(_source.Handle);
         _appBar = new AppBar(_source, Height);
@@ -114,6 +117,7 @@ public partial class MainWindow : Window
         }
 
         _closing = true;
+        _usageSystemEvents?.Dispose();
         _clashVergeClickTimer.Stop();
         _clashVergeClickTimer.Tick -= ClashVergeSingleClick;
         StopMessengerFlash(Messenger.QQ);
@@ -158,6 +162,9 @@ public partial class MainWindow : Window
         var nativeAcrylic = WindowBackdrop.Apply(_source, useTint, dark);
         var background = dark ? DarkBackground : LightBackground;
         Foreground = highContrast ? SystemColors.WindowTextBrush : FrozenBrush(dark ? LightText : DarkText);
+        UsageReminderSolid.Fill = highContrast ? SystemColors.WindowTextBrush : FrozenBrush(dark
+            ? Color.FromRgb(217, 173, 106)
+            : Color.FromRgb(148, 99, 30));
         ClashVergeTunDot.Stroke = highContrast ? SystemColors.WindowBrush : FrozenBrush(background);
 
         if (useTint)
@@ -227,7 +234,14 @@ public partial class MainWindow : Window
             return MaNoActivate;
         }
 
-        if (message == WmTimeChange || (message == WmPowerBroadcast && wParam == PbtApmResumeAutomatic))
+        if (!_closing && UsageSystemEvents.ReadInterruption(message, wParam, lParam) is { } change)
+        {
+            var now = UsageSystemEvents.AwakeMilliseconds;
+            _usageReminder.SetInterrupted(change.Reason, change.Interrupted, now, Environment.TickCount64);
+            UpdateUsageReminder(now);
+        }
+
+        if (message == WmTimeChange || (message == UsageSystemEvents.WmPowerBroadcast && wParam == UsageSystemEvents.PbtApmResumeAutomatic))
         {
             RefreshClock(this, EventArgs.Empty);
         }
@@ -246,6 +260,7 @@ public partial class MainWindow : Window
 
     private async void RefreshStatus(object? sender, EventArgs e)
     {
+        RefreshUsageReminder();
         if (_statusRefreshPending)
         {
             return;
@@ -640,6 +655,76 @@ public partial class MainWindow : Window
         _clock.Start();
     }
 
+    private void RefreshUsageReminder()
+    {
+        if (!_usageReminder.IsAvailable)
+        {
+            return;
+        }
+
+        var now = UsageSystemEvents.AwakeMilliseconds;
+        if (_usageReminder.IsResting && _usageReminder.ShouldCheckInput(Environment.TickCount64) &&
+            UsageSystemEvents.ReadLastInputMilliseconds() is long lastInput)
+        {
+            _usageReminder.ObserveInput(lastInput, now);
+        }
+
+        UpdateUsageReminder(now);
+    }
+
+    private void UpdateUsageReminder(long now)
+    {
+        var phase = _usageReminder.GetPhase(now, _settings.UsageReminderFirstMinutes, _settings.UsageReminderSecondMinutes);
+        if (phase == _usagePhase)
+        {
+            return;
+        }
+
+        _usagePhase = phase;
+        UsageReminderButton.Visibility = phase == UsagePhase.Hidden ? Visibility.Collapsed : Visibility.Visible;
+        UsageReminderRing.Visibility = phase is UsagePhase.Normal or UsagePhase.FirstReminder ? Visibility.Visible : Visibility.Collapsed;
+        UsageReminderHalf.Visibility = phase == UsagePhase.FirstReminder ? Visibility.Visible : Visibility.Collapsed;
+        UsageReminderSolid.Visibility = phase == UsagePhase.SecondReminder ? Visibility.Visible : Visibility.Collapsed;
+        UsageReminderPause.Visibility = phase == UsagePhase.Resting ? Visibility.Visible : Visibility.Collapsed;
+        UsageStartRestItem.IsEnabled = _usageReminder.CanStartRest;
+        if (!UsageStartRestItem.IsEnabled)
+        {
+            UsageReminderButton.ContextMenu.IsOpen = false;
+        }
+    }
+
+    private void UsageReminder_ToolTipOpening(object sender, ToolTipEventArgs e)
+    {
+        var now = UsageSystemEvents.AwakeMilliseconds;
+        UpdateUsageReminder(now);
+        var minutes = _usageReminder.ElapsedMinutes(now);
+        UsageReminderTip.Content = _usagePhase switch
+        {
+            UsagePhase.Resting => "休息中，下一次键鼠操作后重新计时",
+            UsagePhase.FirstReminder or UsagePhase.SecondReminder => $"本轮已使用{minutes}分钟，建议适当活动",
+            _ => $"本轮已使用{minutes}分钟"
+        };
+    }
+
+    private void UsageReminder_Click(object sender, RoutedEventArgs e)
+    {
+        if (_usageReminder.CanStartRest)
+        {
+            var menu = UsageReminderButton.ContextMenu;
+            menu.PlacementTarget = UsageReminderButton;
+            menu.IsOpen = true;
+        }
+    }
+
+    private void UsageStartRest_Click(object sender, RoutedEventArgs e)
+    {
+        _usageReminder.StartRest(Environment.TickCount64);
+        UpdateUsageReminder(UsageSystemEvents.AwakeMilliseconds);
+    }
+
+    private void UsageReminderEnabled_Click(object sender, RoutedEventArgs e) =>
+        SaveAppearance(_settings with { UsageReminderEnabled = UsageReminderEnabledItem.IsChecked });
+
     private void Exit_Click(object sender, RoutedEventArgs e) => Close();
 
     private void Theme_Click(object sender, RoutedEventArgs e)
@@ -661,11 +746,14 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Theme changes must preserve edits made in settings.json while the bar is running.
-        updated = AppearanceSettings.Load(AppearanceSettings.FilePath) with
+        // Preserve edits to other preferences in settings.json while the bar is running.
+        var saved = AppearanceSettings.Load(AppearanceSettings.FilePath);
+        updated = saved with
         {
-            Theme = updated.Theme,
-            AcrylicEnabled = updated.AcrylicEnabled
+            Theme = updated.Theme != _settings.Theme ? updated.Theme : saved.Theme,
+            AcrylicEnabled = updated.AcrylicEnabled != _settings.AcrylicEnabled ? updated.AcrylicEnabled : saved.AcrylicEnabled,
+            UsageReminderEnabled = updated.UsageReminderEnabled != _settings.UsageReminderEnabled
+                ? updated.UsageReminderEnabled : saved.UsageReminderEnabled
         };
         if (!updated.TrySave(AppearanceSettings.FilePath))
         {
@@ -675,9 +763,16 @@ public partial class MainWindow : Window
             return;
         }
 
+        var appearanceChanged = updated.Theme != _settings.Theme || updated.AcrylicEnabled != _settings.AcrylicEnabled;
         _settings = updated;
+        var now = UsageSystemEvents.AwakeMilliseconds;
+        _usageReminder.SetEnabled(_settings.UsageReminderEnabled, now);
+        UpdateUsageReminder(now);
         UpdateThemeMenu();
-        RefreshAppearance();
+        if (appearanceChanged)
+        {
+            RefreshAppearance();
+        }
     }
 
     private void UpdateThemeMenu()
@@ -686,5 +781,6 @@ public partial class MainWindow : Window
         LightThemeItem.IsChecked = _settings.Theme == TopBarTheme.Light;
         SystemThemeItem.IsChecked = _settings.Theme == TopBarTheme.System;
         AcrylicItem.IsChecked = _settings.AcrylicEnabled;
+        UsageReminderEnabledItem.IsChecked = _settings.UsageReminderEnabled;
     }
 }

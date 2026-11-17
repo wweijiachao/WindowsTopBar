@@ -62,6 +62,8 @@
                         <Separator />
                         <MenuItem x:Name="AcrylicItem" Header="亚克力效果" IsCheckable="True" Click="Acrylic_Click" />
                     </MenuItem>
+                    <MenuItem x:Name="UsageReminderEnabledItem" Header="使用提醒" IsCheckable="True"
+                              Click="UsageReminderEnabled_Click" />
                     <Separator />
                     <MenuItem Header="打开配置文件目录" Click="OpenSettingsFolder_Click" />
                     <MenuItem Header="退出" Click="Exit_Click" />
@@ -80,6 +82,30 @@
         </Button>
         <Border HorizontalAlignment="Right" Background="Transparent">
             <StackPanel Orientation="Horizontal">
+                <Button x:Name="UsageReminderButton" Style="{StaticResource StatusButton}" Visibility="Collapsed"
+                        AutomationProperties.Name="连续使用提醒" Click="UsageReminder_Click"
+                        ToolTipOpening="UsageReminder_ToolTipOpening"
+                        ToolTipService.InitialShowDelay="500" ToolTipService.BetweenShowDelay="0">
+                    <Button.ToolTip>
+                        <ToolTip x:Name="UsageReminderTip" Placement="Bottom" />
+                    </Button.ToolTip>
+                    <Button.ContextMenu>
+                        <ContextMenu Placement="Bottom">
+                            <MenuItem x:Name="UsageStartRestItem" Header="开始休息" Click="UsageStartRest_Click" />
+                        </ContextMenu>
+                    </Button.ContextMenu>
+                    <Canvas Width="14" Height="14" IsHitTestVisible="False">
+                        <Path x:Name="UsageReminderRing" Style="{StaticResource StatusGlyph}"
+                              Data="M 7,1 A 6,6 0 1 0 7,13 A 6,6 0 1 0 7,1 Z" />
+                        <Path x:Name="UsageReminderHalf" Visibility="Collapsed"
+                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              Data="M 7,1 A 6,6 0 0 0 7,13 Z" />
+                        <Ellipse x:Name="UsageReminderSolid" Width="13.4" Height="13.4" Canvas.Left="0.3" Canvas.Top="0.3"
+                                 Visibility="Collapsed" />
+                        <Path x:Name="UsageReminderPause" Style="{StaticResource StatusGlyph}" Visibility="Collapsed"
+                              Data="M 5,3 L 5,11 M 9,3 L 9,11" />
+                    </Canvas>
+                </Button>
                 <Button x:Name="QQButton" Width="36" Style="{StaticResource StatusButton}" Click="QQ_Click"
                         Visibility="Collapsed" AutomationProperties.Name="打开 QQ" ToolTip="QQ"
                         ToolTipService.InitialShowDelay="500" ToolTipService.BetweenShowDelay="0">

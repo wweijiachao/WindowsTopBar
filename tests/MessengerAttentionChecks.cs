@@ -34,6 +34,27 @@ internal static class MessengerAttentionChecks
             }
             Check(window.IsVisible && statusPending.GetValue(window) is false, "The top bar did not finish startup.");
 
+            var reminder = type.GetField("_usageReminder", members)!.GetValue(window)!;
+            var setReminder = reminder.GetType().GetMethod("SetEnabled")!;
+            var renderReminder = type.GetMethod("UpdateUsageReminder", members)!;
+            setReminder.Invoke(reminder, [false, 0L]);
+            setReminder.Invoke(reminder, [true, 0L]);
+            renderReminder.Invoke(window, [0L]);
+            var usageButton = (UIElement)window.FindName("UsageReminderButton");
+            var usageHalf = (UIElement)window.FindName("UsageReminderHalf");
+            var usageSolid = (UIElement)window.FindName("UsageReminderSolid");
+            Check(usageButton.Visibility == Visibility.Visible && usageHalf.Visibility == Visibility.Collapsed &&
+                usageSolid.Visibility == Visibility.Collapsed, "Usage reminder did not start with an empty ring.");
+            renderReminder.Invoke(window, [int.MaxValue * 60_000L]);
+            Check(usageSolid.Visibility == Visibility.Visible, "Usage reminder did not display the final icon.");
+            reminder.GetType().GetMethod("StartRest")!.Invoke(reminder, [1000L]);
+            renderReminder.Invoke(window, [int.MaxValue * 60_000L]);
+            Check(((UIElement)window.FindName("UsageReminderPause")).Visibility == Visibility.Visible &&
+                usageSolid.Visibility == Visibility.Collapsed, "Starting a rest did not replace the reminder icon.");
+            setReminder.Invoke(reminder, [false, 0L]);
+            renderReminder.Invoke(window, [0L]);
+            Check(usageButton.Visibility == Visibility.Collapsed, "Disabling reminders did not hide the button.");
+
             var launcher = (FrameworkElement)window.FindName("ShortcutsButton");
             Check(window.InputHitTest(new Point(0.5, 0.5)) is DependencyObject corner && launcher.IsAncestorOf(corner),
                 "Quick Launch should receive mouse input at the upper-left corner.");

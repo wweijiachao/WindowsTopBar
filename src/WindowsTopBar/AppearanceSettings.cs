@@ -12,11 +12,21 @@ internal enum TopBarTheme { System, Dark, Light }
 internal sealed record AppearanceSettings
 {
     public const string DefaultShortcutFolder = "Shortcuts";
+    public const int DefaultUsageReminderFirstMinutes = 60;
+    public const int DefaultUsageReminderSecondMinutes = 90;
     private const string DefaultQqOpenShortcut = "Ctrl+Alt+X";
     private const string DefaultWeChatOpenShortcut = "Ctrl+Alt+W";
 
     public TopBarTheme Theme { get; init; } = TopBarTheme.System;
     public bool AcrylicEnabled { get; init; } = true;
+    public bool UsageReminderEnabled { get; init; } = true;
+
+    [JsonConverter(typeof(ReminderMinutesConverter))]
+    public int UsageReminderFirstMinutes { get; init; } = DefaultUsageReminderFirstMinutes;
+
+    [JsonConverter(typeof(ReminderMinutesConverter))]
+    public int UsageReminderSecondMinutes { get; init; } = DefaultUsageReminderSecondMinutes;
+
     public string? ShortcutFolder { get; init; } = DefaultShortcutFolder;
 
     [JsonConverter(typeof(ShortcutStringConverter))]
@@ -38,7 +48,18 @@ internal sealed record AppearanceSettings
         {
             using var file = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
             var settings = JsonSerializer.Deserialize<AppearanceSettings>(file, JsonOptions);
-            return settings is not null && Enum.IsDefined(settings.Theme) ? settings : new();
+            if (settings is null || !Enum.IsDefined(settings.Theme))
+            {
+                return new();
+            }
+
+            return settings.UsageReminderFirstMinutes > 0 && settings.UsageReminderSecondMinutes > settings.UsageReminderFirstMinutes
+                ? settings
+                : settings with
+                {
+                    UsageReminderFirstMinutes = DefaultUsageReminderFirstMinutes,
+                    UsageReminderSecondMinutes = DefaultUsageReminderSecondMinutes
+                };
         }
         catch (Exception error) when (error is FileNotFoundException or DirectoryNotFoundException)
         {
@@ -66,6 +87,9 @@ internal sealed record AppearanceSettings
                 var addedDefaults = settings.TryAdd(nameof(ShortcutFolder), DefaultShortcutFolder);
                 addedDefaults |= settings.TryAdd(nameof(QqOpenShortcut), DefaultQqOpenShortcut);
                 addedDefaults |= settings.TryAdd(nameof(WeChatOpenShortcut), DefaultWeChatOpenShortcut);
+                addedDefaults |= settings.TryAdd(nameof(UsageReminderEnabled), true);
+                addedDefaults |= settings.TryAdd(nameof(UsageReminderFirstMinutes), DefaultUsageReminderFirstMinutes);
+                addedDefaults |= settings.TryAdd(nameof(UsageReminderSecondMinutes), DefaultUsageReminderSecondMinutes);
                 if (addedDefaults)
                 {
                     TryWrite(path, JsonSerializer.SerializeToUtf8Bytes(settings, JsonOptions));
@@ -104,6 +128,22 @@ internal sealed record AppearanceSettings
 
             return false;
         }
+    }
+
+    private sealed class ReminderMinutesConverter : JsonConverter<int>
+    {
+        public override int Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options)
+        {
+            if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var minutes))
+            {
+                return minutes;
+            }
+
+            reader.Skip();
+            return 0;
+        }
+
+        public override void Write(Utf8JsonWriter writer, int value, JsonSerializerOptions options) => writer.WriteNumberValue(value);
     }
 
     private sealed class ShortcutStringConverter : JsonConverter<string>

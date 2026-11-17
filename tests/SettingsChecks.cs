@@ -33,19 +33,24 @@ var prepare = settings.GetMethod("PrepareForEditing")!;
 try
 {
     var defaults = load.Invoke(null, [path])!;
+    Require(Value(defaults, "UsageReminderEnabled") is true && Value(defaults, "UsageReminderFirstMinutes") is 60 &&
+        Value(defaults, "UsageReminderSecondMinutes") is 90, "Missing reminder defaults.");
     Require(Value(defaults, "QqOpenShortcut") as string == "Ctrl+Alt+X", "Missing QQ default.");
     Require(Value(defaults, "WeChatOpenShortcut") as string == "Ctrl+Alt+W", "Missing WeChat default.");
     prepare.Invoke(null, [path]);
     Require((string?)ReadSettings()["QqOpenShortcut"] == "Ctrl+Alt+X", "New settings omitted the QQ shortcut.");
     Require((string?)ReadSettings()["WeChatOpenShortcut"] == "Ctrl+Alt+W", "New settings omitted the WeChat shortcut.");
+    Require((int?)ReadSettings()["UsageReminderSecondMinutes"] == 90, "New settings omitted the second reminder threshold.");
 
-    File.WriteAllText(path, """{"Theme":"Dark","ShortcutFolder":"Apps","QqOpenShortcut":"Ctrl+Shift+Q"}""");
+    File.WriteAllText(path, """{"Theme":"Dark","ShortcutFolder":"Apps","QqOpenShortcut":"Ctrl+Shift+Q","UsageReminderEnabled":false,"UsageReminderFirstMinutes":40}""");
     prepare.Invoke(null, [path]);
     var migrated = ReadSettings();
     Require((string?)migrated["Theme"] == "Dark" && (string?)migrated["ShortcutFolder"] == "Apps",
         "Migration changed existing settings.");
     Require((string?)migrated["QqOpenShortcut"] == "Ctrl+Shift+Q", "Migration overwrote the customized QQ shortcut.");
     Require((string?)migrated["WeChatOpenShortcut"] == "Ctrl+Alt+W", "Migration omitted the missing WeChat shortcut.");
+    Require((bool?)migrated["UsageReminderEnabled"] == false && (int?)migrated["UsageReminderFirstMinutes"] == 40 &&
+        (int?)migrated["UsageReminderSecondMinutes"] == 90, "Migration changed existing reminder preferences.");
 
     migrated["WeChatOpenShortcut"] = "Alt+F8";
     File.WriteAllText(path, migrated.ToJsonString());
@@ -55,12 +60,19 @@ try
     var saved = ReadSettings();
     Require((string?)saved["QqOpenShortcut"] == "Ctrl+Shift+Q" && (string?)saved["WeChatOpenShortcut"] == "Alt+F8",
         "Save lost a customized shortcut.");
+    Require((bool?)saved["UsageReminderEnabled"] == false, "Save lost the disabled reminder preference.");
 
     File.WriteAllText(path, """{"Theme":"Dark","QqOpenShortcut":{"bad":true},"WeChatOpenShortcut":"Alt+F8"}""");
     var malformed = load.Invoke(null, [path])!;
     Require(Value(malformed, "QqOpenShortcut") is null, "Invalid QQ shortcut type was not ignored.");
     Require(Value(malformed, "WeChatOpenShortcut") as string == "Alt+F8" &&
         Value(malformed, "Theme")?.ToString() == "Dark", "Invalid QQ shortcut discarded other settings.");
+
+    File.WriteAllText(path, """{"Theme":"Dark","UsageReminderEnabled":false,"UsageReminderFirstMinutes":"invalid","UsageReminderSecondMinutes":3}""");
+    var invalidMinutes = load.Invoke(null, [path])!;
+    Require(Value(invalidMinutes, "UsageReminderFirstMinutes") is 60 && Value(invalidMinutes, "UsageReminderSecondMinutes") is 90 &&
+        Value(invalidMinutes, "UsageReminderEnabled") is false && Value(invalidMinutes, "Theme")?.ToString() == "Dark",
+        "Invalid times should only reset the timing thresholds.");
 }
 finally
 {
