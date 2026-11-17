@@ -34,6 +34,10 @@ internal static class MessengerAttentionChecks
             }
             Check(window.IsVisible && statusPending.GetValue(window) is false, "The top bar did not finish startup.");
 
+            var launcher = (FrameworkElement)window.FindName("ShortcutsButton");
+            Check(window.InputHitTest(new Point(0.5, 0.5)) is DependencyObject corner && launcher.IsAncestorOf(corner),
+                "Quick Launch should receive mouse input at the upper-left corner.");
+
             var tunEnabled = type.GetField("_clashVergeTunEnabled", members)!;
             var updateTunDot = type.GetMethod("UpdateClashVergeTunDot", members)!;
             var tunDot = (UIElement)window.FindName("ClashVergeTunDot");
@@ -50,6 +54,11 @@ internal static class MessengerAttentionChecks
             var stop = type.GetMethod("StopMessengerFlash", members)!;
             flash.Invoke(window, [qq]);
             flash.Invoke(window, [weChat]);
+            window.UpdateLayout();
+            var qqButton = (FrameworkElement)window.FindName("QQButton");
+            var qqTop = qqButton.TranslatePoint(new Point(qqButton.ActualWidth / 2, 0.5), window);
+            Check(window.InputHitTest(qqTop) is DependencyObject edge && qqButton.IsAncestorOf(edge),
+                "The QQ button should receive mouse input at the top edge.");
 
             // The old animation finished after four 600 ms cycles.
             PumpFor(2650);
