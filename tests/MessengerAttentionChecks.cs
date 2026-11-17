@@ -55,6 +55,15 @@ internal static class MessengerAttentionChecks
             renderReminder.Invoke(window, [0L]);
             Check(usageButton.Visibility == Visibility.Collapsed, "Disabling reminders did not hide the button.");
 
+            var input = (FrameworkElement)window.FindName("InputIndicator");
+            var quickSettings = (FrameworkElement)window.FindName("QuickSettingsButton");
+            var clockArea = (FrameworkElement)window.FindName("ClockArea");
+            Point Position(FrameworkElement element) => element.TranslatePoint(new Point(), window);
+            window.UpdateLayout();
+            var systemPositions = (Position(input), Position(quickSettings), Position(clockArea));
+            Check(Math.Abs(systemPositions.Item3.X + clockArea.ActualWidth - window.ActualWidth) < 1,
+                "The clock area should reach the right edge of the bar.");
+
             var launcher = (FrameworkElement)window.FindName("ShortcutsButton");
             Check(window.InputHitTest(new Point(0.5, 0.5)) is DependencyObject corner && launcher.IsAncestorOf(corner),
                 "Quick Launch should receive mouse input at the upper-left corner.");
@@ -75,7 +84,11 @@ internal static class MessengerAttentionChecks
             var stop = type.GetMethod("StopMessengerFlash", members)!;
             flash.Invoke(window, [qq]);
             flash.Invoke(window, [weChat]);
+            setReminder.Invoke(reminder, [true, 0L]);
+            renderReminder.Invoke(window, [0L]);
             window.UpdateLayout();
+            Check(systemPositions == (Position(input), Position(quickSettings), Position(clockArea)),
+                "Showing app icons and the reminder moved the fixed system controls.");
             var qqButton = (FrameworkElement)window.FindName("QQButton");
             var qqTop = qqButton.TranslatePoint(new Point(qqButton.ActualWidth / 2, 0.5), window);
             Check(window.InputHitTest(qqTop) is DependencyObject edge && qqButton.IsAncestorOf(edge),
