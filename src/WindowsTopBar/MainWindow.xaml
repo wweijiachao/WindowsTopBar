@@ -95,8 +95,8 @@
                         </ContextMenu>
                     </Button.ContextMenu>
                     <Canvas Width="14" Height="14" IsHitTestVisible="False">
-                        <Path x:Name="UsageReminderRing" Style="{StaticResource StatusGlyph}"
-                              Data="M 7,1 A 6,6 0 1 0 7,13 A 6,6 0 1 0 7,1 Z" />
+                        <Path x:Name="UsageReminderRing" Style="{StaticResource StatusGlyph}" StrokeThickness="2.2"
+                              Data="M 7,1.2 A 5.8,5.8 0 1 0 7,12.8 A 5.8,5.8 0 1 0 7,1.2 Z" />
                         <Path x:Name="UsageReminderHalf" Visibility="Collapsed"
                               Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                               Data="M 7,1 A 6,6 0 0 0 7,13 Z" />
