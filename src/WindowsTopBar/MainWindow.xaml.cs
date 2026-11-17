@@ -104,6 +104,7 @@ public partial class MainWindow : Window
         _messengers.ForegroundWindowChanged += OnMessengerForegroundChanged;
         _messengers.Register(_source.Handle);
         _appBar = new AppBar(_source, Height);
+        _appBar.CenterOffsetChanged += ApplyCentralHubOffset;
         _appBar.Start();
         RefreshAppearance();
     }
@@ -117,6 +118,7 @@ public partial class MainWindow : Window
         }
 
         _closing = true;
+        CentralHubMenu.IsOpen = false;
         _usageSystemEvents?.Dispose();
         _clashVergeClickTimer.Stop();
         _clashVergeClickTimer.Tick -= ClashVergeSingleClick;
@@ -140,7 +142,11 @@ public partial class MainWindow : Window
         _pendingAppearance?.Abort();
         _messengers.ForegroundWindowChanged -= OnMessengerForegroundChanged;
         _messengers.Dispose();
-        _appBar?.Dispose();
+        if (_appBar is not null)
+        {
+            _appBar.CenterOffsetChanged -= ApplyCentralHubOffset;
+            _appBar.Dispose();
+        }
         _source?.RemoveHook(OnWindowMessage);
     }
 
@@ -291,7 +297,6 @@ public partial class MainWindow : Window
             ClashVergeButton.Visibility = clashVerge.Running ? Visibility.Visible : Visibility.Collapsed;
             _clashVergeTunEnabled = clashVerge.TunEnabled;
             UpdateClashVergeTunDot();
-            UpdateAppSeparator();
             // A window can still be restoring when its foreground event arrives.
             if (HasMessengerFlash && MessengerWindows.ReadForegroundMessenger() is { } foreground)
             {
@@ -324,11 +329,6 @@ public partial class MainWindow : Window
             _statusRefreshPending = false;
         }
     }
-
-    private void UpdateAppSeparator() =>
-        AppSeparator.Visibility = QQButton.Visibility == Visibility.Visible || WeChatButton.Visibility == Visibility.Visible ||
-            ClashVergeButton.Visibility == Visibility.Visible
-            ? Visibility.Visible : Visibility.Collapsed;
 
     private void UpdateMessengerVisibility(Messenger messenger, bool running)
     {
@@ -367,7 +367,6 @@ public partial class MainWindow : Window
         var button = isQq ? QQButton : WeChatButton;
         var glyph = isQq ? QQGlyph : WeChatGlyph;
         button.Visibility = Visibility.Visible;
-        UpdateAppSeparator();
 
         ref var flashVersion = ref (isQq ? ref _qqFlashVersion : ref _weChatFlashVersion);
         flashVersion++;
@@ -384,6 +383,20 @@ public partial class MainWindow : Window
 
     private void BarBackground_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) =>
         _appBar?.ActivateWindowBelow((int)PointToScreen(e.GetPosition(this)).X);
+
+    private void ApplyCentralHubOffset(double offset)
+    {
+        CentralHubOffset.X = offset;
+        ReserveCentralHubSpace();
+    }
+
+    private void BarLayout_SizeChanged(object sender, SizeChangedEventArgs e) => ReserveCentralHubSpace();
+
+    private void ReserveCentralHubSpace()
+    {
+        var buttonRight = (BarLayout.ActualWidth + CentralHubButton.Width) / 2 + CentralHubOffset.X;
+        AppStatusArea.ReserveLeft(Math.Max(0, buttonRight - ShortcutsButton.Width));
+    }
 
     private void Shortcuts_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -675,46 +688,54 @@ public partial class MainWindow : Window
     private void UpdateUsageReminder(long now)
     {
         var phase = _usageReminder.GetPhase(now, _settings.UsageReminderFirstMinutes, _settings.UsageReminderSecondMinutes);
-        if (phase == _usagePhase)
+        if (phase != _usagePhase)
         {
-            return;
+            _usagePhase = phase;
+            UsageReminderRing.Visibility = phase is UsagePhase.Hidden or UsagePhase.Normal or UsagePhase.FirstReminder
+                ? Visibility.Visible : Visibility.Collapsed;
+            UsageReminderHalf.Visibility = phase == UsagePhase.FirstReminder ? Visibility.Visible : Visibility.Collapsed;
+            UsageReminderSolid.Visibility = phase == UsagePhase.SecondReminder ? Visibility.Visible : Visibility.Collapsed;
+            UsageReminderPause.Visibility = phase == UsagePhase.Resting ? Visibility.Visible : Visibility.Collapsed;
+            UsageStartRestItem.Visibility = _usageReminder.CanStartRest ? Visibility.Visible : Visibility.Collapsed;
         }
 
-        _usagePhase = phase;
-        UsageReminderButton.Visibility = phase == UsagePhase.Hidden ? Visibility.Collapsed : Visibility.Visible;
-        UsageReminderRing.Visibility = phase is UsagePhase.Normal or UsagePhase.FirstReminder ? Visibility.Visible : Visibility.Collapsed;
-        UsageReminderHalf.Visibility = phase == UsagePhase.FirstReminder ? Visibility.Visible : Visibility.Collapsed;
-        UsageReminderSolid.Visibility = phase == UsagePhase.SecondReminder ? Visibility.Visible : Visibility.Collapsed;
-        UsageReminderPause.Visibility = phase == UsagePhase.Resting ? Visibility.Visible : Visibility.Collapsed;
-        UsageStartRestItem.IsEnabled = _usageReminder.CanStartRest;
-        if (!UsageStartRestItem.IsEnabled)
+        if (CentralHubMenu.IsOpen)
         {
-            UsageReminderButton.ContextMenu.IsOpen = false;
+            var status = !_settings.UsageReminderEnabled ? "使用提醒已关闭" : DescribeUsage(now);
+            if (!Equals(UsageStatusItem.Header, status))
+            {
+                UsageStatusItem.Header = status;
+            }
         }
     }
 
-    private void UsageReminder_ToolTipOpening(object sender, ToolTipEventArgs e)
+    private string DescribeUsage(long now)
     {
-        var now = UsageSystemEvents.AwakeMilliseconds;
-        UpdateUsageReminder(now);
-        var minutes = _usageReminder.ElapsedMinutes(now);
-        UsageReminderTip.Content = _usagePhase switch
+        return _usagePhase switch
         {
+            UsagePhase.Hidden => "计时已暂停",
             UsagePhase.Resting => "休息中，下一次键鼠操作后重新计时",
-            UsagePhase.FirstReminder or UsagePhase.SecondReminder => $"本轮已使用{minutes}分钟，建议适当活动",
-            _ => $"本轮已使用{minutes}分钟"
+            UsagePhase.FirstReminder or UsagePhase.SecondReminder =>
+                $"本轮已使用 {_usageReminder.ElapsedMinutes(now)} 分钟，建议适当活动",
+            _ => $"本轮已使用 {_usageReminder.ElapsedMinutes(now)} 分钟"
         };
     }
 
-    private void UsageReminder_Click(object sender, RoutedEventArgs e)
+    private void CentralHub_ToolTipOpening(object sender, ToolTipEventArgs e)
     {
-        if (_usageReminder.CanStartRest)
-        {
-            var menu = UsageReminderButton.ContextMenu;
-            menu.PlacementTarget = UsageReminderButton;
-            menu.IsOpen = true;
-        }
+        var now = UsageSystemEvents.AwakeMilliseconds;
+        UpdateUsageReminder(now);
+        CentralHubTip.Content = _settings.UsageReminderEnabled ? DescribeUsage(now) : "WindowsTopBar";
     }
+
+    private void CentralHub_Click(object sender, RoutedEventArgs e)
+    {
+        CentralHubMenu.PlacementTarget = CentralHubButton;
+        CentralHubMenu.IsOpen = true;
+    }
+
+    private void CentralHubMenu_Opened(object sender, RoutedEventArgs e) =>
+        UpdateUsageReminder(UsageSystemEvents.AwakeMilliseconds);
 
     private void UsageStartRest_Click(object sender, RoutedEventArgs e)
     {

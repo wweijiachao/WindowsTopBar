@@ -49,6 +49,9 @@ internal sealed class AppBar : IDisposable
     private Rect? _requestedBounds;
     private Rect _approvedBounds;
     private bool _registered;
+    private double _centerOffset;
+
+    public event Action<double>? CenterOffsetChanged;
 
     public AppBar(HwndSource source, double height)
     {
@@ -282,7 +285,7 @@ internal sealed class AppBar : IDisposable
             if (SHAppBarMessage(AbmQueryPos, ref data) != 0)
             {
                 data.Bounds.Bottom = data.Bounds.Top + heightInPixels;
-                if (ReserveBounds(ref data) && MoveTo(_approvedBounds))
+                if (ReserveBounds(ref data) && MoveTo(_approvedBounds, info.Monitor, dpi))
                 {
                     return;
                 }
@@ -296,7 +299,7 @@ internal sealed class AppBar : IDisposable
             }
         }
 
-        MoveTo(info.WorkArea with { Bottom = info.WorkArea.Top + heightInPixels });
+        MoveTo(info.WorkArea with { Bottom = info.WorkArea.Top + heightInPixels }, info.Monitor, dpi);
     }
 
     private bool ReserveBounds(ref AppBarData data)
@@ -327,23 +330,25 @@ internal sealed class AppBar : IDisposable
         }
     }
 
-    private bool MoveTo(Rect bounds)
+    private bool MoveTo(Rect bounds, Rect display, uint dpi)
     {
-        if (GetWindowRect(_handle, out var current)
-            && current.Left == bounds.Left && current.Top == bounds.Top
-            && current.Right == bounds.Right && current.Bottom == bounds.Bottom)
-        {
-            return true;
-        }
-
-        if (SetWindowPos(_handle, 0, bounds.Left, bounds.Top,
+        var alreadyPositioned = GetWindowRect(_handle, out var current) && current == bounds;
+        if (!alreadyPositioned && !SetWindowPos(_handle, 0, bounds.Left, bounds.Top,
                 bounds.Right - bounds.Left, bounds.Bottom - bounds.Top, SwpNoActivate | SwpNoZOrder))
         {
-            return true;
+            Trace.TraceWarning("Could not move the top bar window.");
+            return false;
         }
 
-        Trace.TraceWarning("Could not move the top bar window.");
-        return false;
+        // The shell can trim one side of the bar. Keep the hub aligned to the display midpoint.
+        var offset = ((display.Left - bounds.Left) + (display.Right - bounds.Right)) * 48.0 / dpi;
+        if (offset != _centerOffset)
+        {
+            _centerOffset = offset;
+            CenterOffsetChanged?.Invoke(offset);
+        }
+
+        return true;
     }
 
     private void SetZOrder(nint after)
