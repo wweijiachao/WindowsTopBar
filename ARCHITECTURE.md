@@ -1,41 +1,48 @@
-# Windows Top Bar 架构审查
+# WindowsTopBar 架构
 
-## 现状
+解决方案包含一个 WPF 应用项目。应用通过 `StartupUri` 打开主窗口，随主窗口关闭退出。XAML 定义控件和样式，窗口代码负责交互、生命周期与模块协调，系统调用由各功能模块封装。 [应用入口](src/WindowsTopBar/App.xaml) · [主窗口布局](src/WindowsTopBar/MainWindow.xaml) · [窗口代码](src/WindowsTopBar/MainWindow.xaml.cs)
 
-解决方案只有一个 WPF 项目。[App.xaml](src/WindowsTopBar/App.xaml) 用 `StartupUri` 打开主窗口，并在主窗口关闭时退出应用。[MainWindow.xaml](src/WindowsTopBar/MainWindow.xaml) 定义了空白窗口，[窗口代码](src/WindowsTopBar/MainWindow.xaml.cs) 只有初始化。当前骨架适合直接开始顶栏开发，按功能出现的顺序增加少量类即可。此次审查基于源码，构建与窗口启动仍待验证。
+## 模块职责
 
-## 职责划分
-
-| 组件 | 职责 | 引入时机 |
-| --- | --- | --- |
-| `App.xaml` / `App.xaml.cs` | 管理应用级启动和退出。沿用现有 `StartupUri` 和 `OnMainWindowClose`。 | 已有 |
-| `MainWindow.xaml` | 定义顶栏布局、时钟文字、背景与文字颜色，以及消息提示点的显示样式。 | 随界面功能增加 |
-| `MainWindow.xaml.cs` | 管理窗口生命周期，持有顶栏所需的模块，订阅事件并更新控件。时钟可直接用一个 `DispatcherTimer`。 | 已有 |
-| `AppBar` | 管理本窗口的 Windows AppBar 注册、定位、全屏层级和注销。 | 确认需要预留工作区后 |
-| `WindowBackdrop` / `ScreenColorSampler` | 启用原生桌面亚克力，并为栏底轻微染色提供屏幕窄带平均色。 | 已有 |
-| `NotificationWatcher` | 管理通知授权、订阅及应用筛选，向窗口提供微信、QQ 各自的提示状态。 | 实机验证通知来源后 |
-
-窗口直接创建所需模块，通过普通方法和 .NET 事件连接。少量 P/Invoke 声明和原生结构可以放在对应模块内部，出现共享调用时再提取。控件状态少时，直接由窗口代码更新。出现多处共享状态或复杂绑定后，再考虑轻量 ViewModel。
-
-## 窗口管理
-
-- **先确认是否预留工作区。** 如果最大化窗口应给顶栏让位，采用 Windows AppBar。此前的首版建议采用这个行为。如果选择悬浮，贴顶定位和窗口层级仍有单一归属，AppBar 模块随工作区预留需求引入。[Windows AppBar 文档](https://learn.microsoft.com/en-us/windows/win32/shell/application-desktop-toolbars)
-- **窗口接入，AppBar 定位。** WPF 窗口在 `SourceInitialized` 后接入 `HwndSource` 消息钩子，将停靠相关消息交给 AppBar。AppBar 使用 `ABM_NEW` 注册，通过 `ABM_QUERYPOS` 和 `ABM_SETPOS` 协商位置，再应用 Shell 返回的矩形。它也负责在位置或 DPI 变化时重新定位，并在全屏期间调整窗口层级。XAML 的尺寸使用 DIP，由停靠模块按当前 DPI 转换所需的尺寸。[WPF 窗口初始化](https://learn.microsoft.com/dotnet/api/system.windows.window.sourceinitialized) · [AppBar 位置与通知](https://learn.microsoft.com/en-us/windows/win32/shell/application-desktop-toolbars) · [Windows DPI 文档](https://learn.microsoft.com/en-us/windows/win32/hidpi/high-dpi-desktop-application-development-on-windows)
-- **退出时恢复工作区。** 确定关闭后，在窗口句柄销毁前用 `ABM_REMOVE` 注销 AppBar，并移除窗口消息钩子。注册成功但定位失败时也要注销，避免给桌面留下已预留的空间。[AppBar 注册与注销](https://learn.microsoft.com/en-us/windows/win32/shell/application-desktop-toolbars#registration)
-
-## 事件监听与 UI 更新
-
-- **时钟**由窗口持有一个 `DispatcherTimer`，启动时立即读取本地时间，每次刷新后按下一个分钟边界安排更新，关闭时停止并解除订阅。每次刷新读取实际时间，以便休眠恢复后重新同步。[WPF DispatcherTimer](https://learn.microsoft.com/en-us/dotnet/api/system.windows.threading.dispatchertimer?view=windowsdesktop-10.0)
-- **颜色适配**由右键菜单的主题选项决定，默认跟随系统颜色模式。窗口收到系统设置变化消息时重新应用配色。应用开启亚克力效果时继续轻微染色，DWM 材质可用时同时启用原生亚克力。应用关闭效果时使用实色，高对比度模式使用系统颜色。[Windows 颜色设置](https://learn.microsoft.com/en-us/windows/apps/develop/settings/settings-common#personalization---colors) · [DWM 桌面亚克力](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type)
-- **消息提醒**先在 Windows 11 上分别验证目标微信和 QQ 版本能否产生可获取的系统通知。若采用 `UserNotificationListener`，需在实际 WPF 发布方式下验证包清单能力、用户授权，以及其他应用有焦点时能否收到 `NotificationChanged`。验证通过后，由监听器在 UI 线程请求授权，在常驻进程内处理通知增减，并仅向 UI 提供每个客户端是否存在可观察通知的状态。授权被撤销或来源不可用时清除对应圆点，其他顶栏功能继续运行。[Windows 通知监听与授权](https://learn.microsoft.com/en-us/windows/apps/develop/notifications/app-notifications/notification-listener)
-
-系统模块负责检查 API 的返回值、释放各自的订阅和句柄。窗口关闭时先停止接收更新，再释放这些模块。需要修改 WPF 控件的更新统一回到窗口的 `Dispatcher`，已经排队的更新在关闭开始后直接丢弃。
-
-## 按阶段验证
-
-| 阶段 | 重点检查 |
+| 模块 | 职责 |
 | --- | --- |
-| 构建基线 | 在 Windows 11 上完成 Release 构建，验证骨架窗口可以打开和关闭。 |
-| 顶栏与时钟 | 验证主屏幕在 100% 和 150% 缩放下贴顶准确、启动保留当前应用焦点、跨分钟和休眠恢复后时间正确。若采用 AppBar，额外验证最大化让位、全屏结束后恢复、正常退出后工作区复原。 |
-| 系统配色与亚克力 | 验证浅色和深色下的文字对比度、栏底的轻微透色，以及关闭透明效果后的实色回退。 |
-| 微信与 QQ 提醒 | 分别验证实际来信、系统通知移除、权限拒绝和撤销。提示点随可观察的系统通知状态更新。 |
+| `AppBar` | 主屏幕停靠、工作区、全屏层级、显示器中点偏移、最大化和左右贴靠窗口的激活 |
+| `AppStatusPanel` | 给中央入口让出空间，从右向左排列放得下的完整应用图标 |
+| `UsageReminder`、`UsageSystemEvents` | 连续使用计时、手动休息和恢复，处理会话和电源事件 |
+| `AppearanceSettings`、`ShortcutDirectory` | 本地设置读写、快捷方式目录解析和启动 |
+| `SystemStatus`、`AudioStatus`、`SystemShortcuts` | 输入法、Wi-Fi、电池、音量，以及系统快速设置与快捷键调用 |
+| `MessengerWindows` | QQ、微信进程及窗口识别，接收 Shell 闪动和前台切换事件，唤出或关闭窗口 |
+| `ClashVergeTray`、`ClashVergeSettings` | 运行状态、托盘提示与配置读取，执行仪表板、TUN 和退出操作 |
+| `WindowBackdrop`、`ScreenColorSampler` | 原生桌面亚克力与栏底的轻微染色 |
+
+## 窗口与布局
+
+- 主窗口在 `SourceInitialized` 时取得 `HwndSource` 并安装消息钩子。`AppBar` 用 `ABM_NEW` 注册，经 `ABM_QUERYPOS` 和 `ABM_SETPOS` 确定主屏顶部的停靠矩形。显示器、DPI 或工作区发生变化时重新定位，收到全屏通知时调整层级。AppBar 定位失败时回退到现有工作区，正常退出时用 `ABM_REMOVE` 释放预留空间。 [AppBar](src/WindowsTopBar/AppBar.cs)
+- 顶栏高 28 DIP。快速启动贴左，输入法、快速设置和时钟占用独立的右侧列。中央按钮按主屏幕的物理中点定位，AppBar 实际范围有偏移时换算成 DIP。动态应用图区使用中央按钮与右侧常驻区之间的空间。 [中央入口设计](docs/design/central-hub.md) · [应用区布局](src/WindowsTopBar/AppStatusPanel.cs)
+- 左键点击顶栏空白处时，AppBar 按窗口层级和工作区边界选择最大化窗口或能识别的左右贴靠窗口。右键点击空白处打开主题、亚克力、使用提醒、配置目录和退出菜单。 [窗口选择](src/WindowsTopBar/AppBar.cs) · [右键菜单](src/WindowsTopBar/MainWindow.xaml)
+
+## 事件与刷新
+
+| 功能 | 触发与工作 |
+| --- | --- |
+| 时钟 | 启动时立即更新，此后对齐到本地时间的整分钟。系统时间变化和自动唤醒时立即重新同步。 |
+| 输入法 | 每 300 毫秒在后台读取前台线程的键盘布局。中文布局通过带超时的 IME 消息进一步判断中英文模式。读取失败时保留最近的显示。 |
+| 系统状态与应用图标 | 每 2 秒在后台获取 Wi-Fi、音量、电池、聊天客户端运行状态及 Clash Verge 的 TUN 配置。 |
+| 使用提醒 | 复用 2 秒状态刷新，并根据锁屏、熄屏和睡眠事件即时更新。手动休息且经过 5 秒缓冲后，才在这个刷新周期内检查最近的键鼠活动。 |
+| 主题与栏底染色 | 主题、系统设置或 DWM 状态变化时重新应用外观。亚克力开启且系统处于常规对比度时，窗口可见期间每秒采样。栏下约一栏高的横带缩为 48 × 6 像素取平均色，采样后释放 GDI 资源。 |
+| QQ 和微信提醒 | Windows Shell 的任务栏闪动信号触发提醒，窗口前台事件或状态检查识别到对应应用后停闪。 |
+| 按需操作 | 快捷菜单打开时读取目录，Clash Verge 悬停时读取托盘提示或本地配置。单击 Clash Verge 的等待取自 Windows 双击间隔。快速设置定位仅在用户点击打开后做有限次尝试。 |
+
+输入法和状态读取通过后台任务执行，每类刷新最多保留一个正在执行的读取。WPF 控件由窗口线程更新。关闭窗口时取消等待中的操作，停止计时器，解除消息钩子和事件订阅，并释放原生资源。 [窗口代码](src/WindowsTopBar/MainWindow.xaml.cs) · [屏幕采样](src/WindowsTopBar/ScreenColorSampler.cs) · [快速设置](src/WindowsTopBar/SystemShortcuts.cs)
+
+## 系统集成边界
+
+- QQ 和微信从托盘唤起时使用用户配置的快捷键。闪动提醒使用 Shell 窗口事件及前台状态，应用只处理客户端和窗口状态。 [聊天窗口集成](src/WindowsTopBar/MessengerWindows.cs)
+- 快速设置使用任务栏的系统按钮，调用失败时发送 `Win+A`。识别到系统面板后尝试对齐顶栏右端下方。 [快速设置集成](src/WindowsTopBar/SystemShortcuts.cs)
+- Clash Verge 的 TUN 指示读取已保存的开关，悬浮信息优先取系统托盘，回退到本地配置。仪表板由运行中的应用响应再次启动，TUN 和退出使用其已配置的全局快捷键。 [托盘集成](src/WindowsTopBar/ClashVergeTray.cs) · [配置读取](src/WindowsTopBar/ClashVergeSettings.cs)
+
+## 验证
+
+Release 构建后运行自动检查，覆盖设置、Clash Verge 配置、QQ 和微信闪动、窗口选择、使用计时及中央布局。 [验证命令](README.md#验证)
+
+在 Windows 11 上手动检查不同缩放下的顶栏与时钟、最大化和全屏切换、正常退出后的工作区、锁屏或睡眠恢复后的计时，以及快速设置和各客户端的实际窗体行为。

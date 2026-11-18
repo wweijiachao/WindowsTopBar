@@ -19,7 +19,12 @@
 - 开始修改代码前，先退出当前运行的 WindowsTopBar。正常退出失败时，可以强制关闭该进程。
 - 修改代码后在 Windows 上运行 `dotnet build WindowsTopBar.slnx -c Release --artifacts-path artifacts/<分支名>`。各分支的 Release 分别保存。
 - 开发和验证完成后，直接启动当前分支新生成的 `WindowsTopBar.exe`。涉及界面或生命周期时，手动验证启动、显示和正常退出。
-- 为关键可独立验证的逻辑和回归问题补充自动化测试。有测试项目后运行 `dotnet test WindowsTopBar.slnx -c Release`。涉及 Win32 集成时，手动覆盖相关场景和失败路径。
+- 为关键可独立验证的逻辑和回归问题补充自动化测试。按 [README 的验证步骤](README.md#验证) 运行 `tests/*Checks.cs`，传入本次 Release 的 DLL。涉及 Win32 集成时，手动覆盖相关场景和失败路径。
+
+## 文档维护
+
+- 用户操作、配置和运行命令变化时更新 [README](README.md)，模块职责或事件机制变化时更新 [架构文档](ARCHITECTURE.md)。
+- 实现或重大调整中央入口时，同步更新 [中央入口设计](docs/design/central-hub.md)，明确当前行为、未来构想和待定问题。
 
 ## 安全边界
 
