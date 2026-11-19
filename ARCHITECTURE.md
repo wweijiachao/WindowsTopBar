@@ -10,6 +10,8 @@
 | `AppStatusPanel` | 给中央入口让出空间，从右向左排列放得下的完整应用图标 |
 | `UsageReminder`、`UsageSystemEvents` | 连续使用计时、手动休息和恢复，处理会话和电源事件 |
 | `AppearanceSettings`、`ShortcutDirectory` | 本地设置读写、快捷方式目录解析和启动 |
+| `ShortcutCatalog` | 根目录与 `Pinned` 的独立快照读取，监听相关目录事件，读取失败后重试与监听释放 |
+| `PinnedShortcutPanel` | 在快速启动右侧排列完整的 33 DIP 按钮，将溢出数量提供给菜单 |
 | `SystemStatus`、`AudioStatus`、`SystemShortcuts` | 输入法、Wi-Fi、电池、音量，以及系统快速设置与快捷键调用 |
 | `MessengerWindows` | QQ、微信进程及窗口识别，接收 Shell 闪动和前台切换事件，唤出或关闭窗口 |
 | `ClashVergeTray`、`ClashVergeSettings` | 运行状态、托盘提示与配置读取，执行仪表板、TUN 和退出操作 |
@@ -19,6 +21,7 @@
 
 - 主窗口在 `SourceInitialized` 时取得 `HwndSource` 并安装消息钩子。`AppBar` 用 `ABM_NEW` 注册，经 `ABM_QUERYPOS` 和 `ABM_SETPOS` 确定主屏顶部的停靠矩形。显示器、DPI 或工作区发生变化时重新定位，收到全屏通知时调整层级。AppBar 定位失败时回退到现有工作区，正常退出时用 `ABM_REMOVE` 释放预留空间。 [AppBar](src/WindowsTopBar/AppBar.cs)
 - 顶栏高 28 DIP。快速启动贴左，输入法、快速设置和时钟占用独立的右侧列。中央按钮按主屏幕的物理中点定位，AppBar 实际范围有偏移时换算成 DIP。动态应用图区使用中央按钮与右侧常驻区之间的空间。 [中央入口设计](docs/design/central-hub.md) · [应用区布局](src/WindowsTopBar/AppStatusPanel.cs)
+- 固定快捷方式复用现有按钮主题与悬停模板，从快速启动右侧向中央入口排列。`PinnedShortcutPanel` 测量时不请求水平空间，排列时以中央入口左边界和实际列宽为限，只显示放得下的完整按钮，不移动中央按钮或系统区。溢出项目按原顺序进入菜单「固定项目」，顶栏可见项目不重复；布局变化会同步打开的菜单。首字图标由 `ShortcutDirectory.GetInitial` 在菜单和按钮间共享。 [固定布局](src/WindowsTopBar/PinnedShortcutPanel.cs)
 - 左键点击顶栏空白处时，AppBar 按窗口层级和工作区边界选择最大化窗口或能识别的左右贴靠窗口。右键点击空白处打开主题、亚克力、使用提醒、配置目录和退出菜单。 [窗口选择](src/WindowsTopBar/AppBar.cs) · [右键菜单](src/WindowsTopBar/MainWindow.xaml)
 
 ## 事件与刷新
@@ -31,9 +34,12 @@
 | 使用提醒 | 复用 2 秒状态刷新，并根据锁屏、熄屏和睡眠事件即时更新。手动休息且经过 5 秒缓冲后，才在这个刷新周期内检查最近的键鼠活动。 |
 | 主题与栏底染色 | 主题、系统设置或 DWM 状态变化时重新应用外观。亚克力开启且系统处于常规对比度时，窗口可见期间每秒采样。栏下约一栏高的横带缩为 48 × 6 像素取平均色，采样后释放 GDI 资源。 |
 | QQ 和微信提醒 | Windows Shell 的任务栏闪动信号触发提醒，窗口前台事件或状态检查识别到对应应用后停闪。 |
-| 按需操作 | 快捷菜单打开时读取目录，Clash Verge 悬停时读取托盘提示或本地配置。单击 Clash Verge 的等待取自 Windows 双击间隔。快速设置定位仅在用户点击打开后做有限次尝试。 |
+| 快捷方式 | 启动及每次打开菜单时后台读取根目录和自动创建的 `Pinned`，仅加载各自第一层的 `.lnk`、`.url`，按文件名排序。`FileSystemWatcher` 监听新增、移动、删除、重命名及监听错误；回调只接收根目录、`Pinned` 自身及其第一层变化，更深内容不触发刷新。窗口以 180 毫秒计时器合并事件，最多执行一个后台读取，期间的新请求合并为后续读取。打开菜单时重读 `ShortcutFolder` 并切换监听，其余目录事件沿用当前目录。根目录和固定目录的读取失败独立降级，监听失败时保留菜单读取重试。 |
+| 按需操作 | Clash Verge 悬停时读取托盘提示或本地配置。单击 Clash Verge 的等待取自 Windows 双击间隔。快速设置定位仅在用户点击打开后做有限次尝试。 |
 
 输入法和状态读取通过后台任务执行，每类刷新最多保留一个正在执行的读取。WPF 控件由窗口线程更新。关闭窗口时取消等待中的操作，停止计时器，解除消息钩子和事件订阅，并释放原生资源。 [窗口代码](src/WindowsTopBar/MainWindow.xaml.cs) · [屏幕采样](src/WindowsTopBar/ScreenColorSampler.cs) · [快速设置](src/WindowsTopBar/SystemShortcuts.cs)
+
+快捷方式关闭流程停止合并计时器、移除 Tick、目录和布局事件订阅、释放监听并中止待执行的菜单更新。已在后台进行的文件读取完成后检查窗口关闭状态，不再更新 UI 或重建监听；不在 UI 线程等待磁盘读取结束。
 
 ## 系统集成边界
 
@@ -43,6 +49,6 @@
 
 ## 验证
 
-Release 构建后运行自动检查，覆盖设置、Clash Verge 配置、QQ 和微信闪动、窗口选择、使用计时及中央布局。 [验证命令](README.md#验证)
+Release 构建后运行自动检查，覆盖快捷方式目录与监听、首字图标、固定按钮溢出和恢复、异常及资源释放，以及设置、Clash Verge 配置、QQ 和微信闪动、窗口选择、使用计时和中央布局。 [验证命令](README.md#验证)
 
 在 Windows 11 上手动检查不同缩放下的顶栏与时钟、最大化和全屏切换、正常退出后的工作区、锁屏或睡眠恢复后的计时，以及快速设置和各客户端的实际窗体行为。

@@ -44,6 +44,11 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="PinnedShortcutButton" TargetType="Button" BasedOn="{StaticResource StatusButton}">
+            <Setter Property="Width" Value="33" />
+            <Setter Property="ToolTipService.InitialShowDelay" Value="500" />
+            <Setter Property="ToolTipService.BetweenShowDelay" Value="0" />
+        </Style>
         <Style x:Key="StatusGlyph" TargetType="Path">
             <Setter Property="Stroke" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
             <Setter Property="StrokeThickness" Value="1.45" />
@@ -83,9 +88,11 @@
             <Button.ContextMenu>
                 <ContextMenu>
                     <MenuItem Header="打开快速启动目录" Click="OpenShortcutsFolder_Click" />
+                    <MenuItem Header="打开固定目录（Pinned）" Click="OpenPinnedFolder_Click" />
                 </ContextMenu>
             </Button.ContextMenu>
         </Button>
+        <local:PinnedShortcutPanel x:Name="PinnedShortcutsArea" Grid.Column="1" ClipToBounds="True" />
         <local:AppStatusPanel x:Name="AppStatusArea" Grid.Column="1" ClipToBounds="True">
             <Button x:Name="QQButton" Width="36" Style="{StaticResource StatusButton}" Click="QQ_Click"
                     Visibility="Collapsed" AutomationProperties.Name="打开 QQ" ToolTip="QQ"
