@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 
 namespace WindowsTopBar;
@@ -18,13 +19,27 @@ internal static class ShortcutDirectory
         Launch(folder);
     }
 
+    public static string Prepare(string folder)
+    {
+        var pinned = Path.Combine(folder, "Pinned");
+        Directory.CreateDirectory(pinned);
+        return pinned;
+    }
+
+    public static string GetInitial(string name)
+    {
+        var initial = name.Length == 0 ? string.Empty : StringInfo.GetNextTextElement(name);
+        return initial.Length == 1 && initial[0] is >= 'a' and <= 'z' ? initial.ToUpperInvariant() : initial;
+    }
+
     public static string[] List(string folder)
     {
         Directory.CreateDirectory(folder);
         return Directory.EnumerateFiles(folder)
             .Where(path => Path.GetExtension(path).Equals(".lnk", StringComparison.OrdinalIgnoreCase) ||
                 Path.GetExtension(path).Equals(".url", StringComparison.OrdinalIgnoreCase))
-            .OrderBy(path => Path.GetFileNameWithoutExtension(path), StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(path => Path.GetFileName(path), StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
 

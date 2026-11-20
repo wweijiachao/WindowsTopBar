@@ -18,7 +18,11 @@ if ($LASTEXITCODE -ne 0) { throw "Release 构建失败" }
 ## 使用
 
 - **顶栏与窗口**。顶栏高 28 DIP，固定在主屏幕顶部。Windows AppBar 注册成功后为顶栏预留工作区空间，正常退出时释放。顶栏从任务栏和 Alt+Tab 列表中隐藏。左键点击空白处可唤回最靠前的最大化窗口，或同时唤回可识别的左右贴靠窗口，焦点落在点击位置对应的一侧。右键点击空白处可调整主题、亚克力和使用提醒，也可打开配置文件目录或退出。
-- **快速启动**。左键点击「快速启动 ▾」展开菜单，再点一次收起。右键可打开快捷方式目录。放入 `.lnk` 或 `.url` 文件后，菜单以文件名显示，点击即可启动。每次打开菜单时重新读取目录。
+- **快速启动与固定按钮**。左键点击「快速启动 ▾」展开菜单，再点一次收起。根目录第一层的 `.lnk` 和 `.url` 显示在菜单中。应用自动创建英文子目录 `Pinned`，移入快捷方式即固定，移回根目录即取消固定；两处均按文件名排序，不读取更深的子目录。固定按钮横排在快速启动右侧，每个宽 33 DIP，显示文件名（不含扩展名）的首个字符，英文小写转大写，悬停显示完整名称。右键可选择「打开快速启动目录」或「打开固定目录（Pinned）」。不提供拖动排序或应用内固定管理。
+- **固定区域与刷新**。中央入口和右侧系统区位置保持固定，放不下的完整按钮进入菜单「固定项目」分组；空间恢复后自动返回顶栏，可见的固定项目不在菜单中重复。启动时后台读取，新增、移动、删除、重命名和链接修改会在现有 2 秒刷新周期内合并处理。每次打开菜单立即请求后台重读；根目录与 `Pinned` 读取失败分别显示，再次打开菜单会重试。
+- **启动与切换窗口**。直接指向 `.exe` 的 `.lnk` 支持运行状态识别：应用运行时，固定按钮有淡阴影，退出后约 2 秒内移除。点击未运行的应用会启动；已有可用窗口时，优先恢复并激活最近使用的窗口，最小化时先恢复，已经在前台时保持当前窗口。普通菜单与「固定项目」的点击行为相同。没有可用窗口时执行原快捷方式，由应用处理启动或托盘恢复；系统拒绝前台切换时提示，不因此重复启动，也不设置永久置顶。
+
+同一 `.exe` 的参数、文档和浏览器配置按同一个应用处理。`.url`、文档、脚本／Explorer 等已知宿主及无法解析的快捷方式保留原启动行为。间接启动器和权限不足的进程可能无法可靠识别。
 - **时间与系统状态**。时间区域悬停约 500 毫秒会显示当天日期和星期。输入法每 300 毫秒刷新，中文输入法内的中英文模式分别显示「中」和「英」，读取失败时保留上次状态。Wi-Fi、音量和电池每 2 秒刷新，共用一个快速设置按钮，各自显示悬停提示。能读取时，Wi-Fi 显示已连接网络的 SSID。电池图标旁显示百分比，无电池时隐藏该项。识别到系统快速设置面板后，顶栏尝试将它移到右端下方。
 - **QQ 和微信**。客户端运行时显示对应图标。点击可唤回窗口，主窗口已在前台时再次点击会调用客户端自己的关闭行为。从托盘唤起使用配置中的快捷键。收到 Windows 任务栏闪动信号后，顶栏图标持续闪动，直到对应客户端的普通窗口切到前台。通过任务栏、快捷键、Alt+Tab 或顶栏唤起均可停止闪动。
 - **Clash Verge**。客户端运行时显示随顶栏主题变色的猫头图标。右下角的圆点表示已保存的 TUN 开关为开启，状态每 2 秒刷新。悬停可查看版本、系统代理、TUN 和当前订阅。单击切换 TUN，双击打开仪表板。右键可直接选择「仪表板」「TUN」或「退出」。
@@ -43,7 +47,7 @@ if ($LASTEXITCODE -ne 0) { throw "Release 构建失败" }
 
 右键菜单中的主题、亚克力和使用提醒改动会立即保存。浅色主题为暖灰底和深灰字，深色主题为炭灰底和浅灰字。开启亚克力时会轻微采样并混合栏下颜色，原生亚克力可用时叠加系统材质。关闭亚克力后使用实色，高对比度模式使用系统颜色。
 
-手动编辑的快捷方式目录在下次打开菜单时读取。QQ 和微信的快捷键应与各客户端的唤起设置一致，保存后下次从托盘唤起时读取。格式无效的组合会被跳过。
+手动编辑 `ShortcutFolder` 后，下次打开快速启动菜单时切换目录并重新监听。QQ 和微信的快捷键应与各客户端的唤起设置一致，保存后下次从托盘唤起时读取。格式无效的组合会被跳过。
 
 关闭使用提醒会结束本轮计时，重新开启后从零开始。手动修改提醒时点后，重启顶栏即可使用新值。无效时点回退至默认的 60 和 90 分钟。
 
@@ -66,14 +70,20 @@ if ($LASTEXITCODE -ne 0) { throw "Release 构建失败" }
 
 ## 验证
 
-在仓库根目录构建 Release 后，运行 `tests` 中的 6 项回归检查。
+在仓库根目录构建 Release 后，运行以下 7 项回归检查。
+
+快捷方式检查覆盖目录分组、移动／重命名／删除、目录切换、异常恢复、缓存、首字图标、溢出与恢复、精确进程路径、窗口恢复和阴影。检查会短暂显示测试窗口，需要已解锁的交互式 Windows 桌面；Windows 拒绝焦点切换时验证正常降级。
 
 ```powershell
 $branch = git branch --show-current
 $dll = (Resolve-Path "artifacts/$branch/bin/WindowsTopBar/release/WindowsTopBar.dll").Path
-foreach ($check in Get-ChildItem tests -Filter '*Checks.cs') {
-    dotnet run --artifacts-path "artifacts/verification/$($check.BaseName)" --file $check.FullName -- $dll
-    if ($LASTEXITCODE -ne 0) { throw "$($check.Name) 验证失败" }
+$checks = @(
+    "CentralHubChecks", "ClashVergeChecks", "MessengerAttentionChecks",
+    "PinnedShortcutChecks", "SettingsChecks", "UsageReminderChecks", "WindowSelectionChecks"
+)
+foreach ($check in $checks) {
+    dotnet run --artifacts-path "artifacts/verification/$check" --file "tests/$check.cs" -- $dll
+    if ($LASTEXITCODE -ne 0) { throw "$check 验证失败" }
 }
 ```
 
@@ -89,6 +99,10 @@ src/WindowsTopBar/
   AppStatusPanel.cs                      右侧动态应用图标的排列与溢出处理
   AppearanceSettings.cs                  本地配置读取与保存
   ShortcutDirectory.cs                   快捷方式目录与启动
+  PinnedShortcuts.cs                     固定快捷方式、首字信息和目录变更监听
+  ShellShortcut.cs                       目录变化时在后台 STA 解析 .lnk 的目标
+  ShortcutApplications.cs                运行状态、最近窗口和启动／激活协调
+  ShortcutWindows.cs                     公开 Win32 进程查询、窗口枚举和恢复
   MessengerWindows.cs                    QQ、微信窗口操作和系统事件
   ClashVergeTray.cs / ClashVergeSettings.cs  Clash Verge 状态与菜单操作
   SystemShortcuts.cs                     快速设置和快捷键调用

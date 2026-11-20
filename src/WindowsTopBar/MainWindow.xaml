@@ -31,11 +31,15 @@
                     <ControlTemplate TargetType="Button">
                         <Grid Background="Transparent" Margin="0,0,0,2">
                             <Grid Margin="{TemplateBinding BorderThickness}">
+                                <Border x:Name="RunningShadow" Background="{TemplateBinding Foreground}" CornerRadius="4" Opacity="0" />
                                 <Border x:Name="Hover" Background="{TemplateBinding Foreground}" CornerRadius="4" Opacity="0" />
                                 <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Grid>
                         </Grid>
                         <ControlTemplate.Triggers>
+                            <Trigger Property="local:ShortcutApplications.IsRunning" Value="True">
+                                <Setter TargetName="RunningShadow" Property="Opacity" Value="0.10" />
+                            </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Hover" Property="Opacity" Value="0.12" />
                             </Trigger>
@@ -83,10 +87,13 @@
             <Button.ContextMenu>
                 <ContextMenu>
                     <MenuItem Header="打开快速启动目录" Click="OpenShortcutsFolder_Click" />
+                    <MenuItem Header="打开固定目录（Pinned）" Click="OpenPinnedFolder_Click" />
                 </ContextMenu>
             </Button.ContextMenu>
         </Button>
-        <local:AppStatusPanel x:Name="AppStatusArea" Grid.Column="1" ClipToBounds="True">
+        <StackPanel x:Name="PinnedShortcutsArea" Grid.ColumnSpan="3" Orientation="Horizontal"
+                    HorizontalAlignment="Left" Margin="84,0,0,0" Width="0" ClipToBounds="True" />
+        <local:AppStatusPanel x:Name="AppStatusArea" Grid.Column="1" ClipToBounds="True" SizeChanged="BarLayout_SizeChanged">
             <Button x:Name="QQButton" Width="36" Style="{StaticResource StatusButton}" Click="QQ_Click"
                     Visibility="Collapsed" AutomationProperties.Name="打开 QQ" ToolTip="QQ"
                     ToolTipService.InitialShowDelay="500" ToolTipService.BetweenShowDelay="0">
