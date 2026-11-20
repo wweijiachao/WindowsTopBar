@@ -43,7 +43,9 @@ internal sealed class PinnedShortcuts : IDisposable
                     catch (Exception error) when (IsDirectoryError(error)) { }
                     Watch(_folder!);
                     var menu = ReadEntries(_folder!, out var rootError);
-                    var pins = ReadEntries(System.IO.Path.Combine(_folder!, "Pinned"), out var pinError, icons: true);
+                    var pinnedFolder = System.IO.Path.Combine(_folder!, "Pinned");
+                    var pins = ReadEntries(pinnedFolder, out var pinError, icons: true);
+                    pins = PinnedShortcutOrder.Apply(pinnedFolder, pins);
                     return new ShortcutSnapshot(menu, pins, rootError, pinError);
                 });
             }

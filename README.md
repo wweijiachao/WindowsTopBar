@@ -18,7 +18,7 @@ if ($LASTEXITCODE -ne 0) { throw "Release 构建失败" }
 ## 使用
 
 - **顶栏与窗口**。顶栏高 28 DIP，固定在主屏幕顶部。Windows AppBar 注册成功后为顶栏预留工作区空间，正常退出时释放。顶栏从任务栏和 Alt+Tab 列表中隐藏。左键点击空白处可唤回最靠前的最大化窗口，或同时唤回可识别的左右贴靠窗口，焦点落在点击位置对应的一侧。右键点击空白处可调整主题、亚克力和使用提醒，也可打开配置文件目录或退出。
-- **快速启动与固定按钮**。左键点击「快速启动 ▾」展开菜单，再点一次收起。根目录第一层的 `.lnk` 和 `.url` 显示在菜单中。应用自动创建英文子目录 `Pinned`，移入快捷方式即固定，移回根目录即取消固定；两处均按文件名排序，不读取更深的子目录。固定按钮横排在快速启动右侧，每个宽 33 DIP，显示文件名（不含扩展名）的首个字符，英文小写转大写，悬停显示完整名称。右键可选择「打开快速启动目录」或「打开固定目录（Pinned）」。不提供拖动排序或应用内固定管理。
+- **快速启动与固定按钮**。左键点击「快速启动 ▾」展开菜单，再点一次收起。根目录第一层的 `.lnk` 和 `.url` 显示在菜单中。应用自动创建英文子目录 `Pinned`，移入快捷方式即固定，移回根目录即取消固定；默认按文件名排序，固定项目可通过 `Pinned/order.json` 自定义顺序，不读取更深的子目录。固定按钮横排在快速启动右侧，每个宽 33 DIP，显示文件名（不含扩展名）的首个字符，英文小写转大写，悬停显示完整名称。右键可选择「打开快速启动目录」或「打开固定目录（Pinned）」。不提供拖动排序或应用内固定管理。
 - **固定区域与刷新**。中央入口和右侧系统区位置保持固定，放不下的完整按钮进入菜单「固定项目」分组；空间恢复后自动返回顶栏，可见的固定项目不在菜单中重复。启动时后台读取，新增、移动、删除、重命名和链接修改会在现有 2 秒刷新周期内合并处理。每次打开菜单立即请求后台重读；根目录与 `Pinned` 读取失败分别显示，再次打开菜单会重试。
 - **启动与切换窗口**。直接指向 `.exe` 的 `.lnk` 在点击时检查进程和窗口，不显示运行阴影，也不定时查询快捷方式对应的进程。未运行时启动；已有可用窗口但不在前台时，恢复并切到前台，效果类似 Alt+Tab；该应用已在前台时，最小化当前窗口。多窗口应用优先处理实际前台窗口，否则选择最近使用的窗口。普通菜单与「固定项目」采用相同行为，菜单以打开前的前台应用为判断依据。没有可用窗口时执行原快捷方式，由应用处理启动或托盘恢复；系统拒绝操作时提示，不因此重复启动，也不设置永久置顶。
 
@@ -31,6 +31,22 @@ if ($LASTEXITCODE -ne 0) { throw "Release 构建失败" }
 - **中央入口与连续使用提醒**。圆圈固定在主屏幕水平中点。开启提醒后，亮屏且已解锁的时间都计入本轮，包括阅读等无需操作键鼠的时段。默认到 60 分钟显示半实心圆，90 分钟起显示琥珀色实心圆。悬停可查看本轮用时，左键菜单可选「开始休息」。休息中显示暂停标记，5 秒防误触缓冲结束后的键鼠活动开启新一轮。锁屏、熄屏或睡眠会中断计时。关闭提醒时，中央入口显示空心圆，悬停显示「WindowsTopBar」，点击可查看关闭状态。 [中央入口设计](docs/design/central-hub.md)
 
 屏幕较窄或缩放较高时，放不下的 QQ、微信或 Clash Verge 图标及其提醒会暂时隐藏，为中央入口和常驻系统区留出空间。
+
+### 固定快捷方式排序
+
+在 `Pinned` 中创建 UTF-8 编码的 `order.json`，数组项使用快捷方式的完整文件名（含 `.lnk` 或 `.url`）：
+
+```json
+[
+  "ChatGPT.lnk",
+  "浏览器.lnk",
+  "微信.lnk"
+]
+```
+
+固定按钮按列表顺序从左到右排列，靠前的项目优先留在顶栏；溢出项目按相同顺序进入「固定项目」。名称匹配不区分大小写，重复名称只取第一次，不存在的文件以及空项忽略。未列出的快捷方式追加到末尾并按文件名排序。配置缺失、无法读取或格式错误时回退文件名排序，根目录菜单不受影响。移动数组中的行即可调整顺序，无需改快捷方式名称或同名矢量图标。
+
+修改、删除或重命名 `order.json` 会沿用现有目录监听自动刷新，也可重新打开快速启动菜单立即读取。应用不自动改写排序文件，不增加计时器或空闲读盘。
 
 ### 固定快捷方式矢量图标
 
@@ -100,6 +116,7 @@ Pinned/
 $dll = (Resolve-Path "artifacts/$(git branch --show-current)/bin/WindowsTopBar/release/WindowsTopBar.dll").Path
 dotnet run --artifacts-path artifacts/verification/ShortcutSelectionChecks --file tests/ShortcutSelectionChecks.cs -- $dll
 dotnet run --artifacts-path artifacts/verification/ShortcutIconChecks --file tests/ShortcutIconChecks.cs -- $dll
+dotnet run --artifacts-path artifacts/verification/PinnedShortcutOrderChecks --file tests/PinnedShortcutOrderChecks.cs -- $dll
 ```
 
 以下完整回归包含桌面交互检查，由用户按需运行，代理不批量执行。
@@ -111,7 +128,8 @@ $branch = git branch --show-current
 $dll = (Resolve-Path "artifacts/$branch/bin/WindowsTopBar/release/WindowsTopBar.dll").Path
 $checks = @(
     "CentralHubChecks", "ClashVergeChecks", "MessengerAttentionChecks",
-    "PinnedShortcutChecks", "ShortcutSelectionChecks", "ShortcutIconChecks", "SettingsChecks", "UsageReminderChecks", "WindowSelectionChecks"
+    "PinnedShortcutChecks", "ShortcutSelectionChecks", "ShortcutIconChecks", "PinnedShortcutOrderChecks",
+    "SettingsChecks", "UsageReminderChecks", "WindowSelectionChecks"
 )
 foreach ($check in $checks) {
     dotnet run --artifacts-path "artifacts/verification/$check" --file "tests/$check.cs" -- $dll
@@ -132,6 +150,7 @@ src/WindowsTopBar/
   AppearanceSettings.cs                  本地配置读取与保存
   ShortcutDirectory.cs                   快捷方式目录与启动
   PinnedShortcuts.cs                     固定快捷方式、首字信息和目录变更监听
+  PinnedShortcutOrder.cs                 读取 order.json，稳定排列固定快捷方式
   ShortcutIcon.cs                        读取同名 Path 图标、验证几何并回退首字符
   ShellShortcut.cs                       目录变化时在后台 STA 解析 .lnk 的目标
   ShortcutApplications.cs                运行状态、最近窗口和启动／激活协调
