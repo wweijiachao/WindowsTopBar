@@ -31,11 +31,15 @@
                     <ControlTemplate TargetType="Button">
                         <Grid Background="Transparent" Margin="0,0,0,2">
                             <Grid Margin="{TemplateBinding BorderThickness}">
+                                <Border x:Name="RunningShadow" Background="{TemplateBinding Foreground}" CornerRadius="4" Opacity="0" />
                                 <Border x:Name="Hover" Background="{TemplateBinding Foreground}" CornerRadius="4" Opacity="0" />
                                 <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Grid>
                         </Grid>
                         <ControlTemplate.Triggers>
+                            <Trigger Property="local:ShortcutApplications.IsRunning" Value="True">
+                                <Setter TargetName="RunningShadow" Property="Opacity" Value="0.10" />
+                            </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Hover" Property="Opacity" Value="0.12" />
                             </Trigger>
@@ -43,11 +47,6 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
-        </Style>
-        <Style x:Key="PinnedShortcutButton" TargetType="Button" BasedOn="{StaticResource StatusButton}">
-            <Setter Property="Width" Value="33" />
-            <Setter Property="ToolTipService.InitialShowDelay" Value="500" />
-            <Setter Property="ToolTipService.BetweenShowDelay" Value="0" />
         </Style>
         <Style x:Key="StatusGlyph" TargetType="Path">
             <Setter Property="Stroke" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
@@ -92,8 +91,9 @@
                 </ContextMenu>
             </Button.ContextMenu>
         </Button>
-        <local:PinnedShortcutPanel x:Name="PinnedShortcutsArea" Grid.Column="1" ClipToBounds="True" />
-        <local:AppStatusPanel x:Name="AppStatusArea" Grid.Column="1" ClipToBounds="True">
+        <StackPanel x:Name="PinnedShortcutsArea" Grid.ColumnSpan="3" Orientation="Horizontal"
+                    HorizontalAlignment="Left" Margin="84,0,0,0" Width="0" ClipToBounds="True" />
+        <local:AppStatusPanel x:Name="AppStatusArea" Grid.Column="1" ClipToBounds="True" SizeChanged="BarLayout_SizeChanged">
             <Button x:Name="QQButton" Width="36" Style="{StaticResource StatusButton}" Click="QQ_Click"
                     Visibility="Collapsed" AutomationProperties.Name="打开 QQ" ToolTip="QQ"
                     ToolTipService.InitialShowDelay="500" ToolTipService.BetweenShowDelay="0">

@@ -32,6 +32,12 @@ public partial class MainWindow : Window
 
     private readonly DispatcherTimer _clock = new();
     private readonly UsageReminder _usageReminder = new();
+    private readonly PinnedShortcuts _pinnedShortcuts = new();
+    private readonly ShortcutApplications _shortcutApplications = new();
+    private ShortcutSnapshot _shortcuts = new([], []);
+    private Task _shortcutRead = Task.CompletedTask;
+    private int _visiblePins;
+    private readonly HashSet<string> _openingShortcuts = new(StringComparer.OrdinalIgnoreCase);
     private UsageSystemEvents? _usageSystemEvents;
     private UsagePhase _usagePhase;
     private readonly MessengerWindows _messengers = new();
@@ -67,17 +73,6 @@ public partial class MainWindow : Window
     private bool _clashVergeTunEnabled;
     private ContextMenu? _shortcutsMenu;
     private int? _shortcutsDismissPress;
-    private readonly ShortcutCatalog _shortcutCatalog = new();
-    private ShortcutSnapshot _shortcuts = new(null, [], []);
-    private readonly DispatcherTimer _shortcutRefreshTimer = new(DispatcherPriority.Background)
-    {
-        Interval = TimeSpan.FromMilliseconds(180)
-    };
-    private bool _shortcutRefreshPending;
-    private bool _shortcutRefreshRequested;
-    private bool _shortcutFolderReloadRequested;
-    private int _shortcutNotificationQueued;
-    private DispatcherOperation? _pendingShortcutMenu;
 
     public MainWindow()
     {
@@ -89,19 +84,13 @@ public partial class MainWindow : Window
         _statusTimer.Tick += RefreshStatus;
         _inputTimer.Tick += RefreshInputIndicator;
         _clashVergeClickTimer.Tick += ClashVergeSingleClick;
-        _shortcutRefreshTimer.Tick += RefreshShortcuts;
-        _shortcutCatalog.Changed += ShortcutCatalog_Changed;
-        PinnedShortcutsArea.VisibleCountChanged += PinnedShortcuts_VisibleCountChanged;
-        Loaded += MainWindow_Loaded;
-    }
-
-    private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
-    {
-        _inputTimer.Start();
-        RefreshInputIndicator(this, EventArgs.Empty);
-        _statusTimer.Start();
-        RefreshStatus(this, EventArgs.Empty);
-        await RefreshShortcutsAsync(reloadFolder: true);
+        Loaded += (_, _) =>
+        {
+            _inputTimer.Start();
+            RefreshInputIndicator(this, EventArgs.Empty);
+            _statusTimer.Start();
+            RefreshStatus(this, EventArgs.Empty);
+        };
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -120,6 +109,7 @@ public partial class MainWindow : Window
         _usageReminder.SetEnabled(_settings.UsageReminderEnabled, UsageSystemEvents.AwakeMilliseconds);
         _messengers.ForegroundWindowChanged += OnMessengerForegroundChanged;
         _messengers.Register(_source.Handle);
+        _shortcutApplications.RememberForeground(ShortcutWindows.ForegroundWindow);
         _appBar = new AppBar(_source, Height);
         _appBar.CenterOffsetChanged += ApplyCentralHubOffset;
         _appBar.Start();
@@ -135,13 +125,7 @@ public partial class MainWindow : Window
         }
 
         _closing = true;
-        Loaded -= MainWindow_Loaded;
-        _shortcutRefreshTimer.Stop();
-        _shortcutRefreshTimer.Tick -= RefreshShortcuts;
-        _shortcutCatalog.Changed -= ShortcutCatalog_Changed;
-        _shortcutCatalog.Dispose();
-        PinnedShortcutsArea.VisibleCountChanged -= PinnedShortcuts_VisibleCountChanged;
-        _pendingShortcutMenu?.Abort();
+        _pinnedShortcuts.Dispose();
         CentralHubMenu.IsOpen = false;
         _usageSystemEvents?.Dispose();
         _clashVergeClickTimer.Stop();
@@ -291,6 +275,7 @@ public partial class MainWindow : Window
     private async void RefreshStatus(object? sender, EventArgs e)
     {
         RefreshUsageReminder();
+        if (_shortcutRead.IsCompleted) _shortcutRead = RefreshShortcutsAsync();
         if (_statusRefreshPending)
         {
             return;
@@ -301,13 +286,20 @@ public partial class MainWindow : Window
         {
             var qqFlashAtStart = _qqFlashVersion;
             var weChatFlashAtStart = _weChatFlashVersion;
-            var (battery, wifi, audio, messengers, clashVerge) = await Task.Run(() =>
+            var shortcuts = _shortcuts;
+            var (battery, wifi, audio, messengers, clashVerge, running) = await Task.Run(() =>
                 (SystemStatus.ReadBattery(), SystemStatus.ReadWifi(), AudioStatus.Read(),
-                    MessengerWindows.ReadRunning(), ClashVergeTray.ReadStatus()));
+                    MessengerWindows.ReadRunning(), ClashVergeTray.ReadStatus(),
+                    ShortcutApplications.ReadRunning(shortcuts.Pinned)));
             if (_closing)
             {
                 return;
             }
+
+            if (ReferenceEquals(shortcuts, _shortcuts))
+                foreach (Button button in PinnedShortcutsArea.Children)
+                    ShortcutApplications.SetIsRunning(button,
+                        ((ShortcutEntry)button.Tag).ExecutablePath is { } executable && running.Contains(executable));
 
             // A new flash can arrive while the visibility snapshot is being read.
             if (_qqFlashVersion == qqFlashAtStart)
@@ -372,6 +364,7 @@ public partial class MainWindow : Window
 
     private void OnMessengerForegroundChanged(nint window)
     {
+        _shortcutApplications.RememberForeground(window);
         if (!_closing && HasMessengerFlash && MessengerWindows.ReadAttentionWindow(window) is { } messenger)
         {
             StopMessengerFlash(messenger);
@@ -420,69 +413,19 @@ public partial class MainWindow : Window
     {
         var buttonRight = (BarLayout.ActualWidth + CentralHubButton.Width) / 2 + CentralHubOffset.X;
         AppStatusArea.ReserveLeft(Math.Max(0, buttonRight - ShortcutsButton.Width));
-        PinnedShortcutsArea.SetContentWidth(Math.Max(0,
-            buttonRight - CentralHubButton.Width - ShortcutsButton.Width));
+        var space = buttonRight - CentralHubButton.Width - ShortcutsButton.Width;
+        _visiblePins = Math.Min(_shortcuts.Pinned.Length,
+            (int)Math.Max(0, Math.Floor(Math.Min(space, AppStatusArea.ActualWidth) / 33)));
+        PinnedShortcutsArea.Width = _visiblePins * 33;
+        for (var i = 0; i < PinnedShortcutsArea.Children.Count; i++)
+            PinnedShortcutsArea.Children[i].Visibility = i < _visiblePins ? Visibility.Visible : Visibility.Collapsed;
+        if (_shortcutsMenu is { IsOpen: true } menu) PopulateShortcutsMenu(menu);
     }
 
-    private void ShortcutCatalog_Changed(object? sender, EventArgs e)
+    private async Task RefreshShortcutsAsync(bool force = false)
     {
-        // Watcher callbacks run on worker threads; keep bursts to one queued dispatcher notification.
-        if (Interlocked.Exchange(ref _shortcutNotificationQueued, 1) != 0)
-        {
-            return;
-        }
-        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-        {
-            Interlocked.Exchange(ref _shortcutNotificationQueued, 0);
-            if (_closing)
-            {
-                return;
-            }
-            _shortcutRefreshTimer.Stop();
-            _shortcutRefreshTimer.Start();
-        }));
-    }
-
-    private async void RefreshShortcuts(object? sender, EventArgs e)
-    {
-        _shortcutRefreshTimer.Stop();
-        await RefreshShortcutsAsync(reloadFolder: false);
-    }
-
-    private async Task RefreshShortcutsAsync(bool reloadFolder)
-    {
-        if (_closing)
-        {
-            return;
-        }
-        _shortcutRefreshRequested = true;
-        _shortcutFolderReloadRequested |= reloadFolder;
-        if (_shortcutRefreshPending)
-        {
-            return;
-        }
-
-        _shortcutRefreshPending = true;
-        try
-        {
-            while (_shortcutRefreshRequested && !_closing)
-            {
-                _shortcutRefreshRequested = false;
-                var resolveFolder = _shortcutFolderReloadRequested || _shortcuts.Folder is null;
-                _shortcutFolderReloadRequested = false;
-                var folder = _shortcuts.Folder;
-                var snapshot = await Task.Run(() => resolveFolder
-                    ? _shortcutCatalog.Read() : _shortcutCatalog.Read(folder!));
-                if (!_closing)
-                {
-                    ApplyShortcuts(snapshot);
-                }
-            }
-        }
-        finally
-        {
-            _shortcutRefreshPending = false;
-        }
+        var snapshot = await _pinnedShortcuts.ReadAsync(force);
+        if (!_closing && snapshot is not null) ApplyShortcuts(snapshot);
     }
 
     private void ApplyShortcuts(ShortcutSnapshot snapshot)
@@ -496,40 +439,20 @@ public partial class MainWindow : Window
             {
                 var button = new Button
                 {
-                    Style = (Style)FindResource("PinnedShortcutButton"),
-                    Content = new TextBlock { Text = entry.Initial },
+                    Width = 33,
+                    Content = new TextBlock { Text = entry.Initial, FontWeight = FontWeights.Bold },
                     ToolTip = entry.Name,
-                    Tag = entry.Path
+                    Tag = entry,
+                    Style = (Style)FindResource("StatusButton")
                 };
+                ToolTipService.SetInitialShowDelay(button, 500);
+                ToolTipService.SetBetweenShowDelay(button, 0);
                 AutomationProperties.SetName(button, entry.Name);
-                button.Click += PinnedShortcut_Click;
+                button.Click += (_, _) => LaunchShortcut(entry);
                 PinnedShortcutsArea.Children.Add(button);
             }
         }
-        BarLayout.UpdateLayout();
-        if (_shortcutsMenu is { IsOpen: true } menu)
-        {
-            PopulateShortcutsMenu(menu);
-        }
-    }
-
-    private void PinnedShortcut_Click(object sender, RoutedEventArgs e) =>
-        LaunchShortcut((string)((Button)sender).Tag);
-
-    private void PinnedShortcuts_VisibleCountChanged(object? sender, EventArgs e)
-    {
-        if (_shortcutsMenu is not { IsOpen: true } || _pendingShortcutMenu is { Status: DispatcherOperationStatus.Pending })
-        {
-            return;
-        }
-        // Update an open menu after layout, including when more pins fit following a resize/DPI change.
-        _pendingShortcutMenu = Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-        {
-            if (!_closing && _shortcutsMenu is { IsOpen: true } menu)
-            {
-                PopulateShortcutsMenu(menu);
-            }
-        }));
+        ReserveCentralHubSpace();
     }
 
     private void Shortcuts_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -562,61 +485,41 @@ public partial class MainWindow : Window
         var menu = new ContextMenu { PlacementTarget = ShortcutsButton, Placement = PlacementMode.Bottom };
         menu.AddHandler(Mouse.PreviewMouseDownOutsideCapturedElementEvent,
             new MouseButtonEventHandler(ShortcutsMenu_PreviewMouseDownOutside), handledEventsToo: true);
-        menu.Items.Add(new MenuItem { Header = "正在读取快捷方式…", IsEnabled = false });
+        menu.Items.Add(new MenuItem { Header = "正在读取…", IsEnabled = false });
         _shortcutsMenu = menu;
         menu.IsOpen = true;
-        _shortcutRefreshTimer.Stop();
-        await RefreshShortcutsAsync(reloadFolder: true);
+        _shortcutRead = RefreshShortcutsAsync(force: true);
+        await _shortcutRead;
     }
 
     private void PopulateShortcutsMenu(ContextMenu menu)
     {
         menu.Items.Clear();
         if (_shortcuts.MenuUnavailable)
-        {
             menu.Items.Add(new MenuItem { Header = "无法读取快速启动目录", IsEnabled = false });
-        }
-        foreach (var entry in _shortcuts.Menu)
-        {
-            menu.Items.Add(CreateShortcutMenuItem(entry));
-        }
-
-        var overflow = _shortcuts.Pinned.Skip(PinnedShortcutsArea.VisibleCount).ToArray();
-        if (overflow.Length > 0 || _shortcuts.PinnedUnavailable)
+        foreach (var entry in _shortcuts.Menu) menu.Items.Add(CreateShortcutMenuItem(entry));
+        if (_shortcuts.PinnedUnavailable || _visiblePins < _shortcuts.Pinned.Length)
         {
             var group = new MenuItem { Header = "固定项目" };
-            foreach (var entry in overflow)
-            {
-                group.Items.Add(CreateShortcutMenuItem(entry));
-            }
             if (_shortcuts.PinnedUnavailable)
-            {
                 group.Items.Add(new MenuItem { Header = "无法读取固定目录（Pinned）", IsEnabled = false });
-            }
+            foreach (var entry in _shortcuts.Pinned.Skip(_visiblePins)) group.Items.Add(CreateShortcutMenuItem(entry));
             menu.Items.Add(group);
         }
         if (menu.Items.Count == 0)
-        {
             menu.Items.Add(new MenuItem { Header = "没有其他快捷方式", IsEnabled = false });
-        }
     }
 
     private MenuItem CreateShortcutMenuItem(ShortcutEntry entry)
     {
-        // TextBlock preserves underscores in filenames as literal text.
         var item = new MenuItem
         {
             Header = new TextBlock { Text = entry.Name },
-            Icon = new TextBlock
-            {
-                Text = entry.Initial,
-                FontWeight = FontWeights.Bold,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
-            }
+            Icon = new TextBlock { Text = entry.Initial, FontWeight = FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
         };
         AutomationProperties.SetName(item, entry.Name);
-        item.Click += (_, _) => LaunchShortcut(entry.Path);
+        item.Click += (_, _) => LaunchShortcut(entry);
         return item;
     }
 
@@ -624,7 +527,7 @@ public partial class MainWindow : Window
         OpenFolder(ShortcutDirectory.GetConfiguredFolder, "快速启动目录");
 
     private void OpenPinnedFolder_Click(object sender, RoutedEventArgs e) =>
-        OpenFolder(() => ShortcutDirectory.GetPinnedFolder(ShortcutDirectory.GetConfiguredFolder()), "固定目录（Pinned）");
+        OpenFolder(() => ShortcutDirectory.Prepare(ShortcutDirectory.GetConfiguredFolder()), "固定目录（Pinned）");
 
     private void OpenSettingsFolder_Click(object sender, RoutedEventArgs e)
     {
@@ -644,17 +547,24 @@ public partial class MainWindow : Window
         }
     }
 
-    private void LaunchShortcut(string path)
+    private async void LaunchShortcut(ShortcutEntry entry)
     {
+        if (_closing || !_openingShortcuts.Add(entry.Path)) return;
+        var token = _windowLifetime.Token;
         try
         {
-            ShortcutDirectory.Launch(path);
+            var result = await _shortcutApplications.OpenAsync(entry, token);
+            if (!_closing && result == ShortcutOpenResult.Blocked)
+                MessageBox.Show(this, "Windows 未允许切换到该应用窗口，请通过任务栏切换。", "Windows Top Bar",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception error) when (error is Win32Exception or IOException or UnauthorizedAccessException)
         {
-            MessageBox.Show(this, $"无法打开快捷方式「{Path.GetFileNameWithoutExtension(path)}」。",
+            if (!_closing) MessageBox.Show(this, $"无法打开快捷方式「{entry.Name}」。",
                 "Windows Top Bar", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
+        finally { _openingShortcuts.Remove(entry.Path); }
     }
 
     private async void QQ_Click(object sender, RoutedEventArgs e) => await ToggleMessenger(Messenger.QQ);

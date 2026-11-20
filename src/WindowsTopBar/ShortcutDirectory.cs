@@ -19,13 +19,17 @@ internal static class ShortcutDirectory
         Launch(folder);
     }
 
-    public static string GetPinnedFolder(string folder) => Path.Combine(folder, "Pinned");
+    public static string Prepare(string folder)
+    {
+        var pinned = Path.Combine(folder, "Pinned");
+        Directory.CreateDirectory(pinned);
+        return pinned;
+    }
 
     public static string GetInitial(string name)
     {
         var initial = name.Length == 0 ? string.Empty : StringInfo.GetNextTextElement(name);
-        return initial.Length == 1 && initial[0] is >= 'a' and <= 'z'
-            ? initial.ToUpperInvariant() : initial;
+        return initial.Length == 1 && initial[0] is >= 'a' and <= 'z' ? initial.ToUpperInvariant() : initial;
     }
 
     public static string[] List(string folder)
@@ -35,7 +39,7 @@ internal static class ShortcutDirectory
             .Where(path => Path.GetExtension(path).Equals(".lnk", StringComparison.OrdinalIgnoreCase) ||
                 Path.GetExtension(path).Equals(".url", StringComparison.OrdinalIgnoreCase))
             .OrderBy(path => Path.GetFileName(path), StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(path => Path.GetFileName(path), StringComparer.Ordinal)
+            .ThenBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
 
