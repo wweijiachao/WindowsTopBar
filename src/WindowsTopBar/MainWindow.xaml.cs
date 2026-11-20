@@ -72,6 +72,7 @@ public partial class MainWindow : Window
     private bool _clashVergeDoubleClick;
     private bool _clashVergeTunEnabled;
     private ContextMenu? _shortcutsMenu;
+    private nint _shortcutMenuForeground;
     private int? _shortcutsDismissPress;
 
     public MainWindow()
@@ -109,7 +110,7 @@ public partial class MainWindow : Window
         _usageReminder.SetEnabled(_settings.UsageReminderEnabled, UsageSystemEvents.AwakeMilliseconds);
         _messengers.ForegroundWindowChanged += OnMessengerForegroundChanged;
         _messengers.Register(_source.Handle);
-        _shortcutApplications.RememberForeground(ShortcutWindows.ForegroundWindow);
+        _shortcutApplications.RememberForeground(_messengers.InteractionForegroundWindow);
         _appBar = new AppBar(_source, Height);
         _appBar.CenterOffsetChanged += ApplyCentralHubOffset;
         _appBar.Start();
@@ -286,20 +287,13 @@ public partial class MainWindow : Window
         {
             var qqFlashAtStart = _qqFlashVersion;
             var weChatFlashAtStart = _weChatFlashVersion;
-            var shortcuts = _shortcuts;
-            var (battery, wifi, audio, messengers, clashVerge, running) = await Task.Run(() =>
+            var (battery, wifi, audio, messengers, clashVerge) = await Task.Run(() =>
                 (SystemStatus.ReadBattery(), SystemStatus.ReadWifi(), AudioStatus.Read(),
-                    MessengerWindows.ReadRunning(), ClashVergeTray.ReadStatus(),
-                    ShortcutApplications.ReadRunning(shortcuts.Pinned)));
+                    MessengerWindows.ReadRunning(), ClashVergeTray.ReadStatus()));
             if (_closing)
             {
                 return;
             }
-
-            if (ReferenceEquals(shortcuts, _shortcuts))
-                foreach (Button button in PinnedShortcutsArea.Children)
-                    ShortcutApplications.SetIsRunning(button,
-                        ((ShortcutEntry)button.Tag).ExecutablePath is { } executable && running.Contains(executable));
 
             // A new flash can arrive while the visibility snapshot is being read.
             if (_qqFlashVersion == qqFlashAtStart)
@@ -442,13 +436,12 @@ public partial class MainWindow : Window
                     Width = 33,
                     Content = new TextBlock { Text = entry.Initial, FontWeight = FontWeights.Bold },
                     ToolTip = entry.Name,
-                    Tag = entry,
                     Style = (Style)FindResource("StatusButton")
                 };
                 ToolTipService.SetInitialShowDelay(button, 500);
                 ToolTipService.SetBetweenShowDelay(button, 0);
                 AutomationProperties.SetName(button, entry.Name);
-                button.Click += (_, _) => LaunchShortcut(entry);
+                button.Click += (_, _) => LaunchShortcut(entry, _messengers.InteractionForegroundWindow);
                 PinnedShortcutsArea.Children.Add(button);
             }
         }
@@ -482,6 +475,8 @@ public partial class MainWindow : Window
             return;
         }
 
+        // A context menu can take focus; retain the application that was foreground when it opened.
+        _shortcutMenuForeground = _messengers.InteractionForegroundWindow;
         var menu = new ContextMenu { PlacementTarget = ShortcutsButton, Placement = PlacementMode.Bottom };
         menu.AddHandler(Mouse.PreviewMouseDownOutsideCapturedElementEvent,
             new MouseButtonEventHandler(ShortcutsMenu_PreviewMouseDownOutside), handledEventsToo: true);
@@ -519,7 +514,7 @@ public partial class MainWindow : Window
                 HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
         };
         AutomationProperties.SetName(item, entry.Name);
-        item.Click += (_, _) => LaunchShortcut(entry);
+        item.Click += (_, _) => LaunchShortcut(entry, _shortcutMenuForeground);
         return item;
     }
 
@@ -547,15 +542,15 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void LaunchShortcut(ShortcutEntry entry)
+    private async void LaunchShortcut(ShortcutEntry entry, nint foreground)
     {
         if (_closing || !_openingShortcuts.Add(entry.Path)) return;
         var token = _windowLifetime.Token;
         try
         {
-            var result = await _shortcutApplications.OpenAsync(entry, token);
+            var result = await _shortcutApplications.OpenAsync(entry, token, foreground);
             if (!_closing && result == ShortcutOpenResult.Blocked)
-                MessageBox.Show(this, "Windows 未允许切换到该应用窗口，请通过任务栏切换。", "Windows Top Bar",
+                MessageBox.Show(this, "Windows 未允许操作该应用窗口，请通过任务栏操作。", "Windows Top Bar",
                     MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }

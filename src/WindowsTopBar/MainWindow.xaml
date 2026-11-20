@@ -31,15 +31,11 @@
                     <ControlTemplate TargetType="Button">
                         <Grid Background="Transparent" Margin="0,0,0,2">
                             <Grid Margin="{TemplateBinding BorderThickness}">
-                                <Border x:Name="RunningShadow" Background="{TemplateBinding Foreground}" CornerRadius="4" Opacity="0" />
                                 <Border x:Name="Hover" Background="{TemplateBinding Foreground}" CornerRadius="4" Opacity="0" />
                                 <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Grid>
                         </Grid>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="local:ShortcutApplications.IsRunning" Value="True">
-                                <Setter TargetName="RunningShadow" Property="Opacity" Value="0.10" />
-                            </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Hover" Property="Opacity" Value="0.12" />
                             </Trigger>

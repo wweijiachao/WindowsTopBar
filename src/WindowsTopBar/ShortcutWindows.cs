@@ -8,7 +8,7 @@ using Microsoft.Win32.SafeHandles;
 namespace WindowsTopBar;
 
 internal sealed record ShortcutWindow(nint Handle, int ProcessId);
-internal enum ShortcutActivation { Activated, Missing, Blocked }
+internal enum ShortcutActivation { Activated, Minimized, Missing, Blocked }
 
 internal static class ShortcutWindows
 {
@@ -64,12 +64,12 @@ internal static class ShortcutWindows
         return windows.ToArray();
     }
 
-    public static nint ForegroundWindow => GetForegroundWindow();
-
-    public static async Task<ShortcutActivation> ActivateAsync(nint window, CancellationToken token)
+    public static async Task<ShortcutActivation> ToggleAsync(nint window, nint foreground, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         if (!IsWindow(window)) return ShortcutActivation.Missing;
+        if (window == foreground)
+            return ShowWindowAsync(window, 6) ? ShortcutActivation.Minimized : ShortcutActivation.Blocked; // SW_MINIMIZE
         if (IsIconic(window) && !ShowWindowAsync(window, 9)) return ShortcutActivation.Blocked; // SW_RESTORE
         for (var attempt = 0; attempt < 4; attempt++)
         {

@@ -33,7 +33,7 @@ internal sealed class MessengerWindows : IDisposable
     {
         _window = window;
         var foreground = GetForegroundWindow();
-        if (foreground != window)
+        if (IsExternalWindow(foreground))
         {
             _lastExternalForeground = foreground;
         }
@@ -66,7 +66,7 @@ internal sealed class MessengerWindows : IDisposable
 
         if (kind is ShellWindowActivated or ShellRudeAppActivated)
         {
-            if (target != _window)
+            if (IsExternalWindow(target))
             {
                 _lastExternalForeground = target;
                 // Keep the shell notification as a backup when it agrees with the foreground.
@@ -82,11 +82,27 @@ internal sealed class MessengerWindows : IDisposable
 
     private void OnForegroundChanged(nint hook, uint eventType, nint window, int objectId, int childId, uint eventThread, uint eventTime)
     {
-        if (hook == _foregroundHook && window != 0)
+        if (hook == _foregroundHook && IsExternalWindow(window))
         {
+            _lastExternalForeground = window;
             ForegroundWindowChanged?.Invoke(window);
         }
     }
+
+    public nint InteractionForegroundWindow
+    {
+        get
+        {
+            var foreground = GetForegroundWindow();
+            return ResolveInteractionForeground(foreground, !IsExternalWindow(foreground), _lastExternalForeground);
+        }
+    }
+
+    private static bool IsExternalWindow(nint window) =>
+        GetWindowThreadProcessId(window, out var pid) != 0 && pid != Environment.ProcessId;
+
+    internal static nint ResolveInteractionForeground(nint foreground, bool ownProcess, nint lastExternal) =>
+        foreground == 0 || ownProcess ? lastExternal : foreground;
 
     public static Messenger? ReadForegroundMessenger() => ReadAttentionWindow(GetForegroundWindow());
 
@@ -129,9 +145,8 @@ internal sealed class MessengerWindows : IDisposable
 
     public bool TryMinimizeToTray(Messenger messenger)
     {
-        var foreground = GetForegroundWindow();
         // A WPF click can give the top bar focus before its Click handler runs.
-        var target = foreground == 0 || foreground == _window ? _lastExternalForeground : foreground;
+        var target = InteractionForegroundWindow;
         if (ReadMessenger(target, requireMainWindow: true) != messenger)
         {
             return false;

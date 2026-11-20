@@ -1,17 +1,9 @@
-using System.Windows;
-
 namespace WindowsTopBar;
 
-internal enum ShortcutOpenResult { Launched, Activated, Blocked }
+internal enum ShortcutOpenResult { Launched, Activated, Minimized, Blocked }
 
 internal sealed class ShortcutApplications
 {
-    public static readonly DependencyProperty IsRunningProperty = DependencyProperty.RegisterAttached(
-        "IsRunning", typeof(bool), typeof(ShortcutApplications), new PropertyMetadata(false));
-
-    public static bool GetIsRunning(DependencyObject element) => (bool)element.GetValue(IsRunningProperty);
-    public static void SetIsRunning(DependencyObject element, bool value) => element.SetValue(IsRunningProperty, value);
-
     private readonly object _gate = new();
     private readonly List<nint> _recentWindows = [];
 
@@ -26,27 +18,24 @@ internal sealed class ShortcutApplications
         }
     }
 
-    public static HashSet<string> ReadRunning(ShortcutEntry[] entries) =>
-        ShortcutWindows.ReadProcesses(entries.Select(entry => entry.ExecutablePath).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase))
-            .Values.ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-    public nint FindWindow(string? executable)
+    private nint FindWindow(string? executable, nint foreground)
     {
         if (executable is null) return 0;
         var processes = ShortcutWindows.ReadProcesses([executable]);
         nint[] recent;
         lock (_gate) { recent = _recentWindows.ToArray(); }
-        return SelectWindow(ShortcutWindows.ReadWindows(), processes.Keys.ToHashSet(), recent);
+        return SelectWindow(ShortcutWindows.ReadWindows(), processes.Keys.ToHashSet(), recent, foreground);
     }
 
-    public async Task<ShortcutOpenResult> OpenAsync(ShortcutEntry entry, CancellationToken token)
+    public async Task<ShortcutOpenResult> OpenAsync(ShortcutEntry entry, CancellationToken token, nint foreground)
     {
         token.ThrowIfCancellationRequested();
-        var window = await Task.Run(() => FindWindow(entry.ExecutablePath), token);
+        var window = await Task.Run(() => FindWindow(entry.ExecutablePath, foreground), token);
         if (window != 0)
         {
-            var activation = await ShortcutWindows.ActivateAsync(window, token);
+            var activation = await ShortcutWindows.ToggleAsync(window, foreground, token);
             if (activation == ShortcutActivation.Activated) return ShortcutOpenResult.Activated;
+            if (activation == ShortcutActivation.Minimized) return ShortcutOpenResult.Minimized;
             if (activation == ShortcutActivation.Blocked) return ShortcutOpenResult.Blocked;
         }
         // No usable window: retain the original shortcut's arguments and the app's own tray/launch behavior.
@@ -58,9 +47,11 @@ internal sealed class ShortcutApplications
         return ShortcutOpenResult.Launched;
     }
 
-    internal static nint SelectWindow(ShortcutWindow[] windows, HashSet<int> processIds, nint[] recent)
+    internal static nint SelectWindow(ShortcutWindow[] windows, HashSet<int> processIds, nint[] recent, nint foreground)
     {
         var candidates = windows.Where(window => processIds.Contains(window.ProcessId)).ToArray();
+        // Prefer the actual foreground even when another window of the same app appears earlier in history.
+        if (candidates.Any(window => window.Handle == foreground)) return foreground;
         foreach (var handle in recent)
         {
             if (candidates.Any(window => window.Handle == handle)) return handle;

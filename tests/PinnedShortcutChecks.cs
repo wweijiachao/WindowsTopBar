@@ -73,13 +73,10 @@ internal static class PinnedShortcutChecks
             var entry = Entries(snapshot, "Pinned").GetValue(0)!;
             Check(string.Equals((string?)Type("ShortcutEntry").GetProperty("ExecutablePath")!.GetValue(entry), Environment.ProcessPath,
                 StringComparison.OrdinalIgnoreCase), "Executable link resolution failed.");
-            var running = (HashSet<string>)Type("ShortcutApplications").GetMethod("ReadRunning")!.Invoke(null, [Entries(snapshot, "Pinned")])!;
-            Check(running.Contains(Environment.ProcessPath!), "An externally running process was missed.");
-            var otherPath = Array.CreateInstance(Type("ShortcutEntry"), 1);
-            var otherEntry = Activator.CreateInstance(Type("ShortcutEntry"), ["other.lnk"])!;
-            Type("ShortcutEntry").GetProperty("ExecutablePath")!.SetValue(otherEntry, Path.Combine(root.FullName, Path.GetFileName(Environment.ProcessPath)!));
-            otherPath.SetValue(otherEntry, 0);
-            Check(((HashSet<string>)Type("ShortcutApplications").GetMethod("ReadRunning")!.Invoke(null, [otherPath])!).Count == 0,
+            var running = (Dictionary<int, string>)Type("ShortcutWindows").GetMethod("ReadProcesses")!.Invoke(null, [new[] { Environment.ProcessPath! }])!;
+            Check(running.Count > 0, "An externally running process was missed.");
+            Check(((Dictionary<int, string>)Type("ShortcutWindows").GetMethod("ReadProcesses")!.Invoke(null,
+                [new[] { Path.Combine(root.FullName, Path.GetFileName(Environment.ProcessPath)!) }])!).Count == 0,
                 "An unrelated executable with the same name was matched.");
 
             var layout = (FrameworkElement)bar.FindName("BarLayout");
@@ -103,19 +100,13 @@ internal static class PinnedShortcutChecks
                 var overflow = menu.Items.OfType<MenuItem>().FirstOrDefault(item => Equals(item.Header, "固定项目"));
                 Check((overflow?.Items.Count ?? 0) == 40 - visible.Length, "Overflow pins were lost or duplicated.");
             }
-            var button = (Button)panel.Children[0]; button.ApplyTemplate();
-            Type("ShortcutApplications").GetMethod("SetIsRunning")!.Invoke(null, [button, true]);
-            Check(((FrameworkElement)button.Template.FindName("RunningShadow", button)).Opacity > 0, "Running shadow is missing.");
-            Type("ShortcutApplications").GetMethod("SetIsRunning")!.Invoke(null, [button, false]);
-            Check(((FrameworkElement)button.Template.FindName("RunningShadow", button)).Opacity == 0, "Running shadow did not clear.");
-
             var target = new Window { Title = "Shortcut checks", Width = 260, Height = 100 };
             try
             {
                 target.Show(); target.WindowState = WindowState.Minimized;
                 var app = Activator.CreateInstance(Type("ShortcutApplications"))!;
                 Type("ShortcutApplications").GetMethod("RememberForeground")!.Invoke(app, [new WindowInteropHelper(target).Handle]);
-                var result = Result((Task)Type("ShortcutApplications").GetMethod("OpenAsync")!.Invoke(app, [entry, CancellationToken.None])!);
+                var result = Result((Task)Type("ShortcutApplications").GetMethod("OpenAsync")!.Invoke(app, [entry, CancellationToken.None, (nint)0])!);
                 Check(result!.ToString() is "Activated" or "Blocked", "An existing window was relaunched.");
                 Check(target.WindowState != WindowState.Minimized, "The minimized window was not restored.");
             }
@@ -136,7 +127,7 @@ internal static class PinnedShortcutChecks
                 "Closing the bar retained a watcher.");
             Check(!((DispatcherTimer)Type("MainWindow").GetField("_statusTimer", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(bar)!).IsEnabled,
                 "Closing the bar retained a running status timer.");
-            Console.WriteLine("Shortcut directories, watcher, cache, Unicode, overflow/recovery, process matching, activation, shadow and cleanup passed.");
+            Console.WriteLine("Shortcut directories, watcher, cache, Unicode, overflow/recovery, process matching, activation and cleanup passed.");
         }
         finally
         {

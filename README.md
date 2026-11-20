@@ -20,7 +20,9 @@ if ($LASTEXITCODE -ne 0) { throw "Release 构建失败" }
 - **顶栏与窗口**。顶栏高 28 DIP，固定在主屏幕顶部。Windows AppBar 注册成功后为顶栏预留工作区空间，正常退出时释放。顶栏从任务栏和 Alt+Tab 列表中隐藏。左键点击空白处可唤回最靠前的最大化窗口，或同时唤回可识别的左右贴靠窗口，焦点落在点击位置对应的一侧。右键点击空白处可调整主题、亚克力和使用提醒，也可打开配置文件目录或退出。
 - **快速启动与固定按钮**。左键点击「快速启动 ▾」展开菜单，再点一次收起。根目录第一层的 `.lnk` 和 `.url` 显示在菜单中。应用自动创建英文子目录 `Pinned`，移入快捷方式即固定，移回根目录即取消固定；两处均按文件名排序，不读取更深的子目录。固定按钮横排在快速启动右侧，每个宽 33 DIP，显示文件名（不含扩展名）的首个字符，英文小写转大写，悬停显示完整名称。右键可选择「打开快速启动目录」或「打开固定目录（Pinned）」。不提供拖动排序或应用内固定管理。
 - **固定区域与刷新**。中央入口和右侧系统区位置保持固定，放不下的完整按钮进入菜单「固定项目」分组；空间恢复后自动返回顶栏，可见的固定项目不在菜单中重复。启动时后台读取，新增、移动、删除、重命名和链接修改会在现有 2 秒刷新周期内合并处理。每次打开菜单立即请求后台重读；根目录与 `Pinned` 读取失败分别显示，再次打开菜单会重试。
-- **启动与切换窗口**。直接指向 `.exe` 的 `.lnk` 支持运行状态识别：应用运行时，固定按钮有淡阴影，退出后约 2 秒内移除。点击未运行的应用会启动；已有可用窗口时，优先恢复并激活最近使用的窗口，最小化时先恢复，已经在前台时保持当前窗口。普通菜单与「固定项目」的点击行为相同。没有可用窗口时执行原快捷方式，由应用处理启动或托盘恢复；系统拒绝前台切换时提示，不因此重复启动，也不设置永久置顶。
+- **启动与切换窗口**。直接指向 `.exe` 的 `.lnk` 在点击时检查进程和窗口，不显示运行阴影，也不定时查询快捷方式对应的进程。未运行时启动；已有可用窗口但不在前台时，恢复并切到前台，效果类似 Alt+Tab；该应用已在前台时，最小化当前窗口。多窗口应用优先处理实际前台窗口，否则选择最近使用的窗口。普通菜单与「固定项目」采用相同行为，菜单以打开前的前台应用为判断依据。没有可用窗口时执行原快捷方式，由应用处理启动或托盘恢复；系统拒绝操作时提示，不因此重复启动，也不设置永久置顶。
+
+点击导致顶栏或其菜单获得焦点时，沿用 QQ／微信的处理方式，根据此前的外部前台窗口判断是否最小化。
 
 同一 `.exe` 的参数、文档和浏览器配置按同一个应用处理。`.url`、文档、脚本／Explorer 等已知宿主及无法解析的快捷方式保留原启动行为。间接启动器和权限不足的进程可能无法可靠识别。
 - **时间与系统状态**。时间区域悬停约 500 毫秒会显示当天日期和星期。输入法每 300 毫秒刷新，中文输入法内的中英文模式分别显示「中」和「英」，读取失败时保留上次状态。Wi-Fi、音量和电池每 2 秒刷新，共用一个快速设置按钮，各自显示悬停提示。能读取时，Wi-Fi 显示已连接网络的 SSID。电池图标旁显示百分比，无电池时隐藏该项。识别到系统快速设置面板后，顶栏尝试将它移到右端下方。
@@ -70,16 +72,23 @@ if ($LASTEXITCODE -ne 0) { throw "Release 构建失败" }
 
 ## 验证
 
-在仓库根目录构建 Release 后，运行以下 7 项回归检查。
+在仓库根目录构建 Release 后，可单独运行不操作桌面的窗口选择逻辑检查：
 
-快捷方式检查覆盖目录分组、移动／重命名／删除、目录切换、异常恢复、缓存、首字图标、溢出与恢复、精确进程路径、窗口恢复和阴影。检查会短暂显示测试窗口，需要已解锁的交互式 Windows 桌面；Windows 拒绝焦点切换时验证正常降级。
+```powershell
+$dll = (Resolve-Path "artifacts/$(git branch --show-current)/bin/WindowsTopBar/release/WindowsTopBar.dll").Path
+dotnet run --artifacts-path artifacts/verification/ShortcutSelectionChecks --file tests/ShortcutSelectionChecks.cs -- $dll
+```
+
+以下完整回归包含桌面交互检查，由用户按需运行，代理不批量执行。
+
+快捷方式检查覆盖目录分组、移动／重命名／删除、目录切换、异常恢复、缓存、首字图标、溢出与恢复、精确进程路径和窗口恢复。交互式检查会短暂显示测试窗口，需要已解锁的 Windows 桌面；Windows 拒绝焦点切换时验证正常降级。最终手动确认未启动时启动、后台／最小化时切到前台、已在前台时最小化，以及菜单和多窗口行为。
 
 ```powershell
 $branch = git branch --show-current
 $dll = (Resolve-Path "artifacts/$branch/bin/WindowsTopBar/release/WindowsTopBar.dll").Path
 $checks = @(
     "CentralHubChecks", "ClashVergeChecks", "MessengerAttentionChecks",
-    "PinnedShortcutChecks", "SettingsChecks", "UsageReminderChecks", "WindowSelectionChecks"
+    "PinnedShortcutChecks", "ShortcutSelectionChecks", "SettingsChecks", "UsageReminderChecks", "WindowSelectionChecks"
 )
 foreach ($check in $checks) {
     dotnet run --artifacts-path "artifacts/verification/$check" --file "tests/$check.cs" -- $dll
