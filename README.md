@@ -32,6 +32,28 @@ if ($LASTEXITCODE -ne 0) { throw "Release 构建失败" }
 
 屏幕较窄或缩放较高时，放不下的 QQ、微信或 Clash Verge 图标及其提醒会暂时隐藏，为中央入口和常驻系统区留出空间。
 
+### 固定快捷方式矢量图标
+
+在 `Pinned` 中为快捷方式放入同名的 `.icon.xaml` 文件，即可用单色矢量图标替代首字符；名称不包含快捷方式原扩展名：
+
+```text
+Pinned/
+  ChatGPT.lnk
+  ChatGPT.icon.xaml
+  微信.lnk
+```
+
+此时 ChatGPT 显示矢量图标，微信继续显示「微」。图标同时用于固定按钮和菜单「固定项目」，统一缩放至 16 DIP，并跟随主题前景色。改名、修改或删除图标后按现有目录刷新机制更新；缺失、格式错误或不支持的图标会退回首字符，快捷方式仍可正常启动。
+
+格式是单个填充式 WPF `Path`，只读取 `Data` 属性：
+
+```xml
+<Path xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      Data="M 2,2 L 14,2 L 14,14 L 2,14 Z" />
+```
+
+不加载完整 XAML 界面、属性元素、SVG 或多色图形；颜色和大小由顶栏模板决定，文件中的其他属性不执行。仅在目录加载／变化时后台读取和解析，不增加计时器。仓库提供 [ChatGPT.icon.xaml](assets/shortcut-icons/ChatGPT.icon.xaml) 示例，其几何路径由 [Simple Icons v15.0.0 的 OpenAI 图标](https://github.com/simple-icons/simple-icons/blob/15.0.0/icons/openai.svg) 转换，源项目采用 CC0-1.0；使用时复制到快捷方式旁，无运行时网络请求或新增依赖。
+
 ## 配置
 
 右键点击顶栏空白处，选择「打开配置文件目录」可打开 `%LOCALAPPDATA%\WindowsTopBar`。应用从其中的 `settings.json` 读取配置。文件缺失时使用默认值，首次通过菜单打开配置目录时会生成默认配置文件。
@@ -77,6 +99,7 @@ if ($LASTEXITCODE -ne 0) { throw "Release 构建失败" }
 ```powershell
 $dll = (Resolve-Path "artifacts/$(git branch --show-current)/bin/WindowsTopBar/release/WindowsTopBar.dll").Path
 dotnet run --artifacts-path artifacts/verification/ShortcutSelectionChecks --file tests/ShortcutSelectionChecks.cs -- $dll
+dotnet run --artifacts-path artifacts/verification/ShortcutIconChecks --file tests/ShortcutIconChecks.cs -- $dll
 ```
 
 以下完整回归包含桌面交互检查，由用户按需运行，代理不批量执行。
@@ -88,7 +111,7 @@ $branch = git branch --show-current
 $dll = (Resolve-Path "artifacts/$branch/bin/WindowsTopBar/release/WindowsTopBar.dll").Path
 $checks = @(
     "CentralHubChecks", "ClashVergeChecks", "MessengerAttentionChecks",
-    "PinnedShortcutChecks", "ShortcutSelectionChecks", "SettingsChecks", "UsageReminderChecks", "WindowSelectionChecks"
+    "PinnedShortcutChecks", "ShortcutSelectionChecks", "ShortcutIconChecks", "SettingsChecks", "UsageReminderChecks", "WindowSelectionChecks"
 )
 foreach ($check in $checks) {
     dotnet run --artifacts-path "artifacts/verification/$check" --file "tests/$check.cs" -- $dll
@@ -109,6 +132,7 @@ src/WindowsTopBar/
   AppearanceSettings.cs                  本地配置读取与保存
   ShortcutDirectory.cs                   快捷方式目录与启动
   PinnedShortcuts.cs                     固定快捷方式、首字信息和目录变更监听
+  ShortcutIcon.cs                        读取同名 Path 图标、验证几何并回退首字符
   ShellShortcut.cs                       目录变化时在后台 STA 解析 .lnk 的目标
   ShortcutApplications.cs                运行状态、最近窗口和启动／激活协调
   ShortcutWindows.cs                     公开 Win32 进程查询、窗口枚举和恢复

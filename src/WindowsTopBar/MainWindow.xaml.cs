@@ -424,7 +424,9 @@ public partial class MainWindow : Window
 
     private void ApplyShortcuts(ShortcutSnapshot snapshot)
     {
-        var pinsChanged = !_shortcuts.Pinned.SequenceEqual(snapshot.Pinned);
+        // Geometry instances are frozen for cross-thread use; compare source data to preserve unchanged buttons.
+        var pinsChanged = !_shortcuts.Pinned.Select(entry => (entry.Path, entry.ExecutablePath, entry.IconData))
+            .SequenceEqual(snapshot.Pinned.Select(entry => (entry.Path, entry.ExecutablePath, entry.IconData)));
         _shortcuts = snapshot;
         if (pinsChanged)
         {
@@ -434,7 +436,8 @@ public partial class MainWindow : Window
                 var button = new Button
                 {
                     Width = 33,
-                    Content = new TextBlock { Text = entry.Initial, FontWeight = FontWeights.Bold },
+                    Content = entry,
+                    ContentTemplate = (DataTemplate)FindResource("ShortcutIconTemplate"),
                     ToolTip = entry.Name,
                     Style = (Style)FindResource("StatusButton")
                 };
@@ -510,8 +513,7 @@ public partial class MainWindow : Window
         var item = new MenuItem
         {
             Header = new TextBlock { Text = entry.Name },
-            Icon = new TextBlock { Text = entry.Initial, FontWeight = FontWeights.Bold,
-                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
+            Icon = new ContentControl { Content = entry, ContentTemplate = (DataTemplate)FindResource("ShortcutIconTemplate") }
         };
         AutomationProperties.SetName(item, entry.Name);
         item.Click += (_, _) => LaunchShortcut(entry, _shortcutMenuForeground);

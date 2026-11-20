@@ -14,6 +14,20 @@
         Background="#F1EFEB"
         Foreground="#33353A">
     <Window.Resources>
+        <DataTemplate x:Key="ShortcutIconTemplate">
+            <Grid>
+                <TextBlock x:Name="Initial" Text="{Binding Initial}" FontWeight="Bold"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
+                <Path x:Name="Vector" Data="{Binding IconGeometry}" Width="16" Height="16" Stretch="Uniform"
+                      Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Control}}" />
+            </Grid>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IconGeometry}" Value="{x:Null}">
+                    <Setter TargetName="Initial" Property="Visibility" Value="Visible" />
+                    <Setter TargetName="Vector" Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
         <Style x:Key="StatusTooltipTiming" TargetType="FrameworkElement">
             <Setter Property="ToolTipService.InitialShowDelay" Value="500" />
             <Setter Property="ToolTipService.BetweenShowDelay" Value="0" />

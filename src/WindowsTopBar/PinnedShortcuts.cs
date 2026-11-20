@@ -7,6 +7,8 @@ internal sealed record ShortcutEntry(string Path)
     public string Name => System.IO.Path.GetFileNameWithoutExtension(Path);
     public string Initial => ShortcutDirectory.GetInitial(Name);
     public string? ExecutablePath { get; init; }
+    public string? IconData { get; init; }
+    public System.Windows.Media.Geometry? IconGeometry { get; init; }
 }
 
 internal sealed record ShortcutSnapshot(ShortcutEntry[] Menu, ShortcutEntry[] Pinned,
@@ -41,7 +43,7 @@ internal sealed class PinnedShortcuts : IDisposable
                     catch (Exception error) when (IsDirectoryError(error)) { }
                     Watch(_folder!);
                     var menu = ReadEntries(_folder!, out var rootError);
-                    var pins = ReadEntries(System.IO.Path.Combine(_folder!, "Pinned"), out var pinError);
+                    var pins = ReadEntries(System.IO.Path.Combine(_folder!, "Pinned"), out var pinError, icons: true);
                     return new ShortcutSnapshot(menu, pins, rootError, pinError);
                 });
             }
@@ -57,11 +59,12 @@ internal sealed class PinnedShortcuts : IDisposable
         finally { _reads.Release(); }
     }
 
-    private static ShortcutEntry[] ReadEntries(string folder, out bool unavailable)
+    private static ShortcutEntry[] ReadEntries(string folder, out bool unavailable, bool icons = false)
     {
         try
         {
-            var entries = ShortcutDirectory.List(folder).Select(path => new ShortcutEntry(path)).ToArray();
+            var entries = ShortcutDirectory.List(folder)
+                .Select(path => icons ? ShortcutIcon.Load(new ShortcutEntry(path)) : new ShortcutEntry(path)).ToArray();
             unavailable = false;
             return entries;
         }
