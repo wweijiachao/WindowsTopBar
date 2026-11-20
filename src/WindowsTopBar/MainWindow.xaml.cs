@@ -19,6 +19,8 @@ public partial class MainWindow : Window
     private const int WmTimeChange = 0x001E;
     private const int WmSettingChange = 0x001A;
     private const int WmMouseActivate = 0x0021;
+    private const int WmSysCommand = 0x0112;
+    private const int ScClose = 0xF060;
     private const int MaNoActivate = 3;
     private const int WmThemeChanged = 0x031A;
     private const int WmDwmCompositionChanged = 0x031E;
@@ -237,6 +239,13 @@ public partial class MainWindow : Window
 
     private nint OnWindowMessage(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
+        if (message == WmSysCommand && (wParam & 0xFFF0) == ScClose)
+        {
+            // Block Alt+F4 and other system close commands; keep Close() and WM_CLOSE available.
+            handled = true;
+            return 0;
+        }
+
         if (!_closing && _messengers.ReadFlash(message, wParam, lParam) is { } messenger)
         {
             FlashMessenger(messenger);

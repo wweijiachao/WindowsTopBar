@@ -22,6 +22,7 @@
 
 ## 窗口与布局
 
+- 主窗口消息钩子拦截 `WM_SYSCOMMAND` 中的 `SC_CLOSE`（比较前用 `0xFFF0` 屏蔽系统保留的低四位），阻止 Alt+F4 及同类系统关闭入口。右键菜单「退出」继续直接调用 `Close()`；`WM_CLOSE` 不拦截，保留 `Process.CloseMainWindow()` 等进程管理正常关闭路径，沿用现有资源清理流程。
 - 主窗口在 `SourceInitialized` 时取得 `HwndSource` 并安装消息钩子。`AppBar` 用 `ABM_NEW` 注册，经 `ABM_QUERYPOS` 和 `ABM_SETPOS` 确定主屏顶部的停靠矩形。显示器、DPI 或工作区发生变化时重新定位，收到全屏通知时调整层级。AppBar 定位失败时回退到现有工作区，正常退出时用 `ABM_REMOVE` 释放预留空间。 [AppBar](src/WindowsTopBar/AppBar.cs)
 - 顶栏高 28 DIP。快速启动贴左，其右侧的固定快捷方式每个占 33 DIP，只显示左侧空间能容纳的完整按钮。输入法、快速设置和时钟占用独立的右侧列。中央按钮按主屏幕的物理中点定位，AppBar 实际范围有偏移时换算成 DIP。动态应用图区使用中央按钮与右侧常驻区之间的空间。 [中央入口设计](docs/design/central-hub.md) · [应用区布局](src/WindowsTopBar/AppStatusPanel.cs)
 - 固定按钮复用现有 `StackPanel` 与按钮模板，按中央入口左边界和系统区前的可用宽度取整；溢出的按钮折叠并显示在菜单「固定项目」，可见项目不重复。布局变化同步打开的菜单，无额外自定义布局类。
