@@ -339,9 +339,17 @@ public partial class MainWindow : Window
             var silent = audio is { Muted: true } or { Percentage: 0 };
             VolumeWaves.Visibility = !silent && audio.HasValue ? Visibility.Visible : Visibility.Collapsed;
             VolumeMute.Visibility = silent ? Visibility.Visible : Visibility.Collapsed;
-            VolumeIcon.ToolTip = audio is { } output
-                ? (output.Muted ? "已静音" : $"音量 {output.Percentage}%")
-                : "音量状态不可用";
+            if (audio is { } output)
+            {
+                var level = output.Muted ? "已静音" : $"{output.Percentage}%";
+                VolumeIcon.ToolTip = string.IsNullOrWhiteSpace(output.DeviceName)
+                    ? level
+                    : $"{output.DeviceName}：{level}";
+            }
+            else
+            {
+                VolumeIcon.ToolTip = "音量状态不可用";
+            }
         }
         finally
         {

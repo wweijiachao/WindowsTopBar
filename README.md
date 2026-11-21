@@ -28,6 +28,7 @@ if ($LASTEXITCODE -ne 0) { throw "Release 构建失败" }
 同一 `.exe` 的参数、文档和浏览器配置按同一个应用处理。`.url`、文档、脚本／Explorer 等已知宿主及无法解析的快捷方式保留原启动行为。间接启动器和权限不足的进程可能无法可靠识别。
 
 - **时间与系统状态**。时间区域悬停约 500 毫秒会显示当天日期和星期。输入法每 300 毫秒刷新，中文输入法内的中英文模式分别显示「中」和「英」，读取失败时保留上次状态。Wi-Fi、音量和电池每 2 秒刷新，共用一个快速设置按钮，各自显示悬停提示。能读取时，Wi-Fi 显示已连接网络的 SSID。电池图标旁显示百分比，无电池时隐藏该项。识别到系统快速设置面板后，顶栏尝试将它移到右端下方。
+- **音频输出**。音量图标悬停显示系统默认多媒体输出设备名称和音量，例如「耳机 (HONOR Earbuds 4)：31%」，静音时显示「设备名称：已静音」。名称沿用 Windows 提供的显示名，设备切换后随现有 2 秒后台刷新更新；名称读取失败时仅显示百分比或「已静音」，不加「音量」前缀。应用单独指定的输出设备不在此处反映。
 - **QQ 和微信**。客户端运行时显示对应图标。点击可唤回窗口，主窗口已在前台时再次点击会调用客户端自己的关闭行为。从托盘唤起使用配置中的快捷键。收到 Windows 任务栏闪动信号后，顶栏图标持续闪动，直到对应客户端的普通窗口切到前台。通过任务栏、快捷键、Alt+Tab 或顶栏唤起均可停止闪动。
 - **Clash Verge**。客户端运行时显示随顶栏主题变色的猫头图标。右下角的圆点表示已保存的 TUN 开关为开启，状态每 2 秒刷新。悬停可查看版本、系统代理、TUN 和当前订阅。单击切换 TUN，双击打开仪表板。右键可直接选择「仪表板」「TUN」或「退出」。
 - **中央入口与连续使用提醒**。圆圈固定在主屏幕水平中点。开启提醒后，亮屏且已解锁的时间都计入本轮，包括阅读等无需操作键鼠的时段。默认到 60 分钟显示半实心圆，90 分钟起显示琥珀色实心圆。悬停可查看本轮用时，左键菜单可选「开始休息」。休息中显示暂停标记，5 秒防误触缓冲结束后的键鼠活动开启新一轮。锁屏、熄屏或睡眠会中断计时。关闭提醒时，中央入口显示空心圆，悬停显示「WindowsTopBar」，点击可查看关闭状态。 [中央入口设计](docs/design/central-hub.md)
@@ -119,7 +120,11 @@ $dll = (Resolve-Path "artifacts/$(git branch --show-current)/bin/WindowsTopBar/r
 dotnet run --artifacts-path artifacts/verification/ShortcutSelectionChecks --file tests/ShortcutSelectionChecks.cs -- $dll
 dotnet run --artifacts-path artifacts/verification/ShortcutIconChecks --file tests/ShortcutIconChecks.cs -- $dll
 dotnet run --artifacts-path artifacts/verification/PinnedShortcutOrderChecks --file tests/PinnedShortcutOrderChecks.cs -- $dll
+
+dotnet run --artifacts-path artifacts/verification/AudioInteropChecks --file tests/AudioInteropChecks.cs -- $dll
 ```
+
+`AudioInteropChecks` 仅校验音频 COM 属性结构的大小与字段偏移，不读取音频设备或操作桌面。
 
 以下完整回归包含桌面交互检查，由用户按需运行，代理不批量执行。
 
