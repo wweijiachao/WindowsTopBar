@@ -15,6 +15,35 @@ if ($LASTEXITCODE -ne 0) { throw "Release 构建失败" }
 
 各分支的 Release 分别存放在 `artifacts/<分支名>`。有现成的 Release 目录时，可用 .NET 10 Windows 桌面运行时直接双击其中的 `WindowsTopBar.exe`。复制到其他目录时请随 EXE 保留配套文件。
 
+## Release 打包
+
+在 Windows 上安装 Python 3.10+、Git 和 .NET 10 SDK。先提交需要发布的修改，再在该提交上创建版本标签，例如：
+
+```powershell
+git tag -a v1.0.1 -m "WindowsTopBar 1.0.1"
+python scripts/package_release.py
+```
+
+脚本以自身位置定位仓库，不依赖终端当前目录；仅使用 Python 标准库。自动读取当前提交上的 tag，检查工作区干净（包括未跟踪文件，忽略的构建产物除外），再通过进程管理尝试正常关闭 WindowsTopBar，5 秒内未退出则结束该应用进程。脚本不切换提交、不创建或推送标签、不修改用户配置、不自动启动发布程序。
+
+同时发布 Windows x64 完整版和精简版。完整版自带 .NET 10 运行时，精简版需要用户安装 .NET 10 Desktop Runtime (x64)。两种包都将卫星语言资源限制为 `zh-Hans`，默认语言资源仍保留；临时使用官方 NuGet 源，首次发布可能需要联网下载运行时，不修改全局 NuGet 配置。
+
+以 `v1.0.1` 为例，输出如下，ZIP 内直接包含可运行文件，无多余的 `full`／`lite` 外层目录：
+
+```text
+artifacts/releases/v1.0.1/
+  full/
+  lite/
+  WindowsTopBar-v1.0.1-win-x64.zip
+  WindowsTopBar-v1.0.1-win-x64-lite.zip
+```
+
+当前提交没有 tag 时脚本报错，不会使用旧版本号；多个 tag 指向当前提交时可执行 `python scripts/package_release.py --tag v1.0.1`。标签需能用作 Windows 目录名（字母、数字、点、下划线、连字符，且非保留名称）。每次用独立临时目录发布，全部发布和压缩成功后才替换该 tag 的既有输出，避免失败时压缩旧文件；替换最终目录期间若有文件占用或磁盘错误，需处理后重新运行。请勿从版本输出目录启动程序后同时重新打包。
+
+解压 ZIP 后由用户手动验证运行、界面和系统集成，再将两个 ZIP 上传到该 tag 对应的 GitHub Release。仅执行脚本不会发布到 GitHub。
+
+脚本的纯逻辑检查可运行 `python -m unittest discover -s tests -p test_package_release.py`，只使用临时文件和模拟发布，不启动或关闭应用、不调用桌面接口。
+
 ## 使用
 
 - **关闭顶栏**。焦点在顶栏时，Alt+F4 不会退出。顶栏拦截系统关闭命令（`WM_SYSCOMMAND / SC_CLOSE`），同一路径的标准关闭入口也会被拦截；退出请使用顶栏空白处右键菜单「退出」。直接发送 `WM_CLOSE` 的进程管理方式（如 `Process.CloseMainWindow()`）仍可正常关闭顶栏，供构建前退出使用。
@@ -184,6 +213,6 @@ AGENTS.md                                开发、验证和安全约定
 
 ## 开发说明
 
-本项目在开发过程中使用 OpenAI Codex 辅助编写代码、排查问题和整理文档。
+本项目在开发过程中使用 OpenAI Codex 编写代码、排查问题和整理文档。
 
 本项目为个人自用，暂无持续开发计划。

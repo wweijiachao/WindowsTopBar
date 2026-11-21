@@ -6,6 +6,10 @@
 *.binlog
 *.trx
 
+# Python packaging tools
+__pycache__/
+*.pyc
+
 # IDE and local tooling
 .vs/
 .idea/
