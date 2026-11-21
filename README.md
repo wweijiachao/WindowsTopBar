@@ -28,6 +28,7 @@ if ($LASTEXITCODE -ne 0) { throw "Release 构建失败" }
 同一 `.exe` 的参数、文档和浏览器配置按同一个应用处理。`.url`、文档、脚本／Explorer 等已知宿主及无法解析的快捷方式保留原启动行为。间接启动器和权限不足的进程可能无法可靠识别。
 
 - **时间与系统状态**。时间区域悬停约 500 毫秒会显示当天日期和星期。输入法每 300 毫秒刷新，中文输入法内的中英文模式分别显示「中」和「英」，读取失败时保留上次状态。Wi-Fi、音量和电池每 2 秒刷新，共用一个快速设置按钮，各自显示悬停提示。能读取时，Wi-Fi 显示已连接网络的 SSID。电池图标旁显示百分比，无电池时隐藏该项。识别到系统快速设置面板后，顶栏尝试将它移到右端下方。
+- **电池剩余时间**。使用电池供电且系统提供有效估算时，电池悬停提示显示「电池 65% · 预计剩余 3 小时 20 分钟」。不足一分钟显示「不足 1 分钟」，不显示秒数；接通电源、充电、电源状态不明或估算不可用时省略剩余时间。直接使用 Windows 估算并沿用 2 秒状态刷新，不自行预测或倒计时，数值可能随负载变化。
 - **音频输出**。音量图标悬停显示系统默认多媒体输出设备名称和音量，例如「耳机 (HONOR Earbuds 4)：31%」，静音时显示「设备名称：已静音」。名称沿用 Windows 提供的显示名，设备切换后随现有 2 秒后台刷新更新；名称读取失败时仅显示百分比或「已静音」，不加「音量」前缀。应用单独指定的输出设备不在此处反映。
 - **QQ 和微信**。客户端运行时显示对应图标。点击可唤回窗口，主窗口已在前台时再次点击会调用客户端自己的关闭行为。从托盘唤起使用配置中的快捷键。收到 Windows 任务栏闪动信号后，顶栏图标持续闪动，直到对应客户端的普通窗口切到前台。通过任务栏、快捷键、Alt+Tab 或顶栏唤起均可停止闪动。
 - **Clash Verge**。客户端运行时显示随顶栏主题变色的猫头图标。右下角的圆点表示已保存的 TUN 开关为开启，状态每 2 秒刷新。悬停可查看版本、系统代理、TUN 和当前订阅。单击切换 TUN，双击打开仪表板。右键可直接选择「仪表板」「TUN」或「退出」。
@@ -122,9 +123,13 @@ dotnet run --artifacts-path artifacts/verification/ShortcutIconChecks --file tes
 dotnet run --artifacts-path artifacts/verification/PinnedShortcutOrderChecks --file tests/PinnedShortcutOrderChecks.cs -- $dll
 
 dotnet run --artifacts-path artifacts/verification/AudioInteropChecks --file tests/AudioInteropChecks.cs -- $dll
+
+dotnet run --artifacts-path artifacts/verification/BatteryRemainingTimeChecks --file tests/BatteryRemainingTimeChecks.cs -- $dll
 ```
 
 `AudioInteropChecks` 仅校验音频 COM 属性结构的大小与字段偏移，不读取音频设备或操作桌面。
+
+`BatteryRemainingTimeChecks` 用模拟电源数据检查时长格式和接电、充电、未知状态的降级，不调用电源接口或操作桌面。
 
 以下完整回归包含桌面交互检查，由用户按需运行，代理不批量执行。
 

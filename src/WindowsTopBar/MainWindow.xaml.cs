@@ -327,6 +327,10 @@ public partial class MainWindow : Window
             BatteryFill.Width = battery.Charging ? 0 : 14.5 * battery.Percentage.GetValueOrDefault() / 100;
             BatteryCharging.Visibility = battery.Charging ? Visibility.Visible : Visibility.Collapsed;
             BatteryIndicator.ToolTip = $"电池 {BatteryText.Text}{(battery.Charging ? " · 充电中" : "")}";
+            if (battery.RemainingTime is { } remaining)
+            {
+                BatteryIndicator.ToolTip += $" · 预计剩余 {remaining}";
+            }
 
             WifiDisconnected.Visibility = wifi.Connected == false ? Visibility.Visible : Visibility.Collapsed;
             WifiIcon.ToolTip = wifi.Ssid ?? (wifi.Connected switch

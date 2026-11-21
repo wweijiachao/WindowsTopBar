@@ -78,15 +78,35 @@ internal static class SystemStatus
     private static bool TryReadIme(nint ime, uint command, out nuint value) =>
         SendMessageTimeoutW(ime, WmImeControl, command, 0, AbortIfHung, ImeQueryTimeout, out value) != 0;
 
-    public static (int? Percentage, bool Charging, bool HasBattery) ReadBattery()
+    public static (int? Percentage, bool Charging, bool HasBattery, string? RemainingTime) ReadBattery()
     {
         if (!GetSystemPowerStatus(out var status) || status.BatteryFlags == 255)
         {
-            return (null, false, true);
+            return (null, false, true, null);
         }
 
         return (status.Percentage <= 100 ? status.Percentage : null,
-            (status.BatteryFlags & 8) != 0, (status.BatteryFlags & 128) == 0);
+            (status.BatteryFlags & 8) != 0, (status.BatteryFlags & 128) == 0,
+            FormatBatteryRemainingTime(status.AcLineStatus, status.BatteryFlags, status.BatteryLifeTime));
+    }
+
+    private static string? FormatBatteryRemainingTime(byte acLineStatus, byte batteryFlags, uint seconds)
+    {
+        // Only show estimates when explicitly on battery; ignore stale values on AC or unknown power state.
+        if (acLineStatus != 0 || batteryFlags == 255 || (batteryFlags & (8 | 128)) != 0 || seconds == uint.MaxValue)
+        {
+            return null;
+        }
+
+        var hours = seconds / 3600;
+        var minutes = seconds / 60 % 60;
+        return (hours, minutes) switch
+        {
+            (0, 0) => "不足 1 分钟",
+            (0, _) => $"{minutes} 分钟",
+            (_, 0) => $"{hours} 小时",
+            _ => $"{hours} 小时 {minutes} 分钟"
+        };
     }
 
     public static (bool? Connected, string? Ssid) ReadWifi()
